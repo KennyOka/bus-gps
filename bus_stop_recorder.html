@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>バス停 記録ツール</title>
+<style>
+  :root{
+    --bg: #14171c;
+    --panel: #1c2029;
+    --panel-2: #232833;
+    --line: #2e3440;
+    --ink: #eef0f4;
+    --ink-dim: #8a91a3;
+    --ink-faint: #565d6d;
+    --good: #35d68a;
+    --warn: #f0b93d;
+    --bad: #ef5350;
+    --mono: 'DejaVu Sans Mono', 'Courier New', ui-monospace, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
+  html,body{margin:0; min-height:100%; background:var(--bg); color:var(--ink); font-family:var(--sans);}
+  body{display:flex; flex-direction:column; min-height:100vh;}
+
+  .topbar{
+    padding: 14px 16px 10px; border-bottom:1px solid var(--line);
+  }
+  .title{ font-size:15px; font-weight:600; }
+  .route-name-input{
+    margin-top:8px; width:100%; background:var(--panel); border:1px solid var(--line);
+    color:var(--ink); border-radius:8px; padding:8px 10px; font-size:13px; font-family:var(--sans);
+  }
+  .route-name-input:focus{ outline: 1px solid var(--ink-dim); }
+
+  .gps-status{
+    padding: 10px 16px; display:flex; align-items:center; gap:10px; font-size:12px; color:var(--ink-dim);
+    border-bottom:1px solid var(--line);
+  }
+  .gps-dot{ width:9px; height:9px; border-radius:50%; background:var(--ink-faint); flex-shrink:0; transition: background 0.3s ease;}
+  .gps-dot.acquiring{ background: var(--warn); animation: pulse 1s infinite; }
+  .gps-dot.ready{ background: var(--good); }
+  .gps-dot.error{ background: var(--bad); }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.35;} }
+
+  .capture-zone{
+    padding: 22px 20px 16px; display:flex; flex-direction:column; align-items:center;
+  }
+  .capture-btn{
+    width:100%; max-width:340px; padding:26px 20px; border-radius:18px;
+    background: var(--ink); color: var(--bg); border:none; font-size:19px; font-weight:700;
+    display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;
+  }
+  .capture-btn:active{ transform: scale(0.98); }
+  .capture-btn .icon{ font-size:30px; }
+  .capture-btn:disabled{ opacity:0.4; }
+  .capture-sub{ margin-top:10px; font-size:11px; color:var(--ink-dim); text-align:center; max-width:320px; }
+
+  .list-wrap{ flex:1; padding: 4px 16px 12px; overflow-y:auto; }
+  .list-header{ display:flex; justify-content:space-between; align-items:center; margin: 10px 0 8px; }
+  .list-title{ font-size:12px; color:var(--ink-dim); letter-spacing:0.06em; }
+  .undo-btn{ font-size:11px; background:none; border:1px solid var(--line); color:var(--ink-dim); padding:5px 9px; border-radius:7px; }
+
+  .stop-row{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:12px 14px; margin-bottom:8px; display:flex; align-items:center; gap:10px;
+  }
+  .stop-idx{
+    width:26px; height:26px; border-radius:50%; background:var(--panel-2); color:var(--ink-dim);
+    display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0;
+  }
+  .stop-main{ flex:1; min-width:0; }
+  .stop-name{
+    width:100%; background:transparent; border:none; color:var(--ink); font-size:15px; font-weight:600;
+    padding:2px 0; border-bottom:1px dashed transparent;
+  }
+  .stop-name:focus{ outline:none; border-bottom:1px dashed var(--ink-dim); }
+  .stop-meta{ font-family:var(--mono); font-size:10.5px; color:var(--ink-dim); margin-top:3px; }
+  .stop-elapsed{ font-family:var(--mono); font-size:11px; color:var(--ink-faint); white-space:nowrap; }
+  .stop-actions{ display:flex; flex-direction:column; gap:4px; }
+  .icon-btn{
+    background:none; border:none; color:var(--ink-faint); font-size:14px; padding:3px 6px; cursor:pointer;
+  }
+  .icon-btn:hover{ color:var(--ink); }
+
+  .empty-hint{ color:var(--ink-faint); font-size:12px; text-align:center; padding: 24px 10px; }
+
+  .export-bar{
+    border-top:1px solid var(--line); padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    display:flex; gap:8px;
+  }
+  .export-bar button{
+    flex:1; padding:12px 10px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2);
+    color:var(--ink); font-size:12px; font-weight:600;
+  }
+  .export-bar button.reset{ background:none; color:var(--bad); border-color: rgba(239,83,80,0.35); flex:0.6; }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="title">🚏 バス停 GPS記録ツール</div>
+    <input class="route-name-input" id="routeNameInput" placeholder="路線名(例: 名瀬 → 古仁屋線)">
+  </div>
+
+  <div class="gps-status">
+    <div class="gps-dot" id="gpsDot"></div>
+    <div id="gpsStatusText">GPS待機中</div>
+  </div>
+
+  <div class="capture-zone">
+    <button class="capture-btn" id="captureBtn">
+      <span class="icon">📍</span>
+      <span>この停留所を記録</span>
+    </button>
+    <div class="capture-sub">停留所の前で停車してから押してください。数秒待つと精度が上がります。</div>
+  </div>
+
+  <div class="list-wrap">
+    <div class="list-header">
+      <div class="list-title" id="listTitle">記録済み: 0件</div>
+      <button class="undo-btn" id="undoBtn" style="display:none;">直前を取り消す</button>
+    </div>
+    <div id="stopList"></div>
+    <div class="empty-hint" id="emptyHint">まだ記録がありません。運転を始めて最初のバス停で「記録」を押してください。</div>
+  </div>
+
+  <div class="export-bar">
+    <button id="exportJson">JSON書き出し</button>
+    <button id="exportCsv">CSV書き出し</button>
+    <button class="reset" id="resetAll">全消去</button>
+  </div>
+
+<script>
+(function(){
+  let stops = []; // {name, lat, lng, accuracy, capturedAt}
+  let firstCaptureMs = null;
+  let lastAccuracy = null;
+
+  const els = {
+    routeNameInput: document.getElementById('routeNameInput'),
+    gpsDot: document.getElementById('gpsDot'),
+    gpsStatusText: document.getElementById('gpsStatusText'),
+    captureBtn: document.getElementById('captureBtn'),
+    stopList: document.getElementById('stopList'),
+    listTitle: document.getElementById('listTitle'),
+    emptyHint: document.getElementById('emptyHint'),
+    undoBtn: document.getElementById('undoBtn'),
+    exportJson: document.getElementById('exportJson'),
+    exportCsv: document.getElementById('exportCsv'),
+    resetAll: document.getElementById('resetAll'),
+  };
+
+  // 常時位置を軽く監視して精度バッジを更新(記録ボタンを押した瞬間の取得はgetCurrentPositionで別途高精度取得)
+  if (navigator.geolocation){
+    navigator.geolocation.watchPosition(
+      pos => {
+        lastAccuracy = pos.coords.accuracy;
+        els.gpsDot.className = 'gps-dot ready';
+        els.gpsStatusText.textContent = `GPS準備完了(精度 約${Math.round(pos.coords.accuracy)}m)`;
+      },
+      err => {
+        els.gpsDot.className = 'gps-dot error';
+        els.gpsStatusText.textContent = '位置情報エラー: ' + err.message;
+      },
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
+    );
+    els.gpsDot.className = 'gps-dot acquiring';
+    els.gpsStatusText.textContent = 'GPS取得中…';
+  } else {
+    els.gpsStatusText.textContent = 'この端末はGPSに対応していません';
+  }
+
+  function fmtElapsed(ms){
+    const totalSec = Math.round(ms/1000);
+    const m = Math.floor(totalSec/60), s = totalSec%60;
+    return `+${m}分${s.toString().padStart(2,'0')}秒`;
+  }
+  function fmtClock(ms){
+    return new Date(ms).toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false});
+  }
+
+  function render(){
+    els.stopList.innerHTML = '';
+    els.listTitle.textContent = `記録済み: ${stops.length}件`;
+    els.emptyHint.style.display = stops.length ? 'none' : 'block';
+    els.undoBtn.style.display = stops.length ? 'inline-block' : 'none';
+
+    stops.forEach((s, i) => {
+      const row = document.createElement('div');
+      row.className = 'stop-row';
+
+      const idx = document.createElement('div');
+      idx.className = 'stop-idx';
+      idx.textContent = i+1;
+
+      const main = document.createElement('div');
+      main.className = 'stop-main';
+
+      const nameInput = document.createElement('input');
+      nameInput.className = 'stop-name';
+      nameInput.value = s.name;
+      nameInput.placeholder = `バス停 ${i+1}`;
+      nameInput.addEventListener('input', () => { s.name = nameInput.value; });
+
+      const meta = document.createElement('div');
+      meta.className = 'stop-meta';
+      meta.textContent = `${s.lat.toFixed(6)}, ${s.lng.toFixed(6)} ・ 精度±${Math.round(s.accuracy)}m ・ ${fmtClock(s.capturedAt)}`;
+
+      main.appendChild(nameInput);
+      main.appendChild(meta);
+
+      const elapsed = document.createElement('div');
+      elapsed.className = 'stop-elapsed';
+      elapsed.textContent = i===0 ? '起点' : fmtElapsed(s.capturedAt - firstCaptureMs);
+
+      const actions = document.createElement('div');
+      actions.className = 'stop-actions';
+      const upBtn = document.createElement('button');
+      upBtn.className = 'icon-btn'; upBtn.textContent = '↑'; upBtn.disabled = i===0;
+      upBtn.addEventListener('click', () => { if (i>0){ [stops[i-1],stops[i]]=[stops[i],stops[i-1]]; render(); } });
+      const delBtn = document.createElement('button');
+      delBtn.className = 'icon-btn'; delBtn.textContent = '✕';
+      delBtn.addEventListener('click', () => { stops.splice(i,1); if(stops.length===0) firstCaptureMs=null; render(); });
+      actions.appendChild(upBtn);
+      actions.appendChild(delBtn);
+
+      row.appendChild(idx);
+      row.appendChild(main);
+      row.appendChild(elapsed);
+      row.appendChild(actions);
+      els.stopList.appendChild(row);
+    });
+  }
+
+  function capture(){
+    if (!navigator.geolocation){ return; }
+    els.captureBtn.disabled = true;
+    els.captureBtn.querySelector('span:last-child').textContent = '取得中…';
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const now = Date.now();
+        if (!firstCaptureMs) firstCaptureMs = now;
+        stops.push({
+          name: '',
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          capturedAt: now
+        });
+        render();
+        els.captureBtn.disabled = false;
+        els.captureBtn.querySelector('span:last-child').textContent = 'この停留所を記録';
+        if (navigator.vibrate) navigator.vibrate(80);
+      },
+      err => {
+        els.gpsStatusText.textContent = '記録失敗: ' + err.message;
+        els.captureBtn.disabled = false;
+        els.captureBtn.querySelector('span:last-child').textContent = 'この停留所を記録';
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  }
+  els.captureBtn.addEventListener('click', capture);
+
+  els.undoBtn.addEventListener('click', () => {
+    stops.pop();
+    if (stops.length===0) firstCaptureMs = null;
+    render();
+  });
+
+  els.resetAll.addEventListener('click', () => {
+    if (confirm('記録した全てのバス停データを消去します。よろしいですか?')){
+      stops = []; firstCaptureMs = null; render();
+    }
+  });
+
+  function download(filename, content, mime){
+    const blob = new Blob([content], {type: mime});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  els.exportJson.addEventListener('click', () => {
+    const routeName = els.routeNameInput.value || '無題の路線';
+    const data = {
+      name: routeName,
+      stops: stops.map((s,i) => ({
+        name: s.name || `バス停 ${i+1}`,
+        lat: s.lat,
+        lng: s.lng,
+        scheduledMin: firstCaptureMs ? Math.round((s.capturedAt - firstCaptureMs)/60000) : 0
+      }))
+    };
+    download('bus_stops.json', JSON.stringify(data, null, 2), 'application/json');
+  });
+
+  els.exportCsv.addEventListener('click', () => {
+    const rows = [['順番','名称','緯度','経度','精度(m)','記録時刻','起点からの経過(分)']];
+    stops.forEach((s,i) => {
+      rows.push([
+        i+1,
+        s.name || `バス停 ${i+1}`,
+        s.lat, s.lng,
+        Math.round(s.accuracy),
+        fmtClock(s.capturedAt),
+        firstCaptureMs ? Math.round((s.capturedAt - firstCaptureMs)/60000) : 0
+      ]);
+    });
+    const csv = rows.map(r => r.join(',')).join('\n');
+    download('bus_stops.csv', '\uFEFF' + csv, 'text/csv');
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

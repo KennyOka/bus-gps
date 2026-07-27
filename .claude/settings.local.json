@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node build_diagram.js)",
+      "Bash(node -e ' *)",
+      "Bash(node verify.js)"
+    ]
+  }
+}

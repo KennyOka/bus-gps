@@ -1,0 +1,16 @@
+# 依存パッケージ
+node_modules/
+
+# OS 生成ファイル
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# エディタ
+.vscode/
+*.swp
+
+# 一時ファイル
+*.tmp
+~$*.xlsx
+~$*.docx
