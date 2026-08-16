@@ -1,0 +1,15 @@
+{
+  "name": "早発モニター",
+  "short_name": "早発モニター",
+  "description": "ダイヤ定刻と現在時刻の差を秒表示し、早発を防止する運行支援モニター",
+  "start_url": "./bus_monitor.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14171c",
+  "theme_color": "#14171c",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
