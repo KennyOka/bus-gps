@@ -13,6 +13,9 @@ Desktop.ini
 # Claude Code ローカル設定(マシン固有・共有しない)
 .claude/settings.local.json
 
+# DBパスワード入りAPI(公開厳禁。テンプレート busstops.example.php のみ共有)
+api/busstops.php
+
 # 一時ファイル
 *.tmp
 ~$*.xlsx

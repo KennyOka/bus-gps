@@ -84,6 +84,7 @@
     </div>
     <div class="data-bar">
       <div class="data-status" id="dataStatus">バス停データ未読込</div>
+      <button id="syncBtn">🌐 同期</button>
       <button id="loadBtn">📂 読込</button>
       <input type="file" id="fileInput" accept="application/json,.json">
     </div>
@@ -129,6 +130,7 @@
 (function(){
   const LS_STOPS = 'gpscheck_stops';
   const LS_RADIUS = 'gpscheck_radius';
+  const LS_URL = 'gpscheck_syncurl';
 
   let stops = [];      // {name, lat, lng} 全件メモリ常駐
   let radiusM = parseInt(localStorage.getItem(LS_RADIUS) || '40', 10);
@@ -141,6 +143,7 @@
     gpsDot: document.getElementById('gpsDot'),
     gpsText: document.getElementById('gpsText'),
     dataStatus: document.getElementById('dataStatus'),
+    syncBtn: document.getElementById('syncBtn'),
     loadBtn: document.getElementById('loadBtn'),
     fileInput: document.getElementById('fileInput'),
     heroName: document.getElementById('heroName'),
@@ -205,6 +208,28 @@
     reader.readAsText(file);
     e.target.value='';
   });
+
+  // ---- URLから同期(APIを一度だけ取得→キャッシュ。以降はオフライン動作) ----
+  async function syncFromUrl(askIfNone){
+    let url = localStorage.getItem(LS_URL);
+    if(!url && askIfNone){
+      url = prompt('同期URL(busstops.php のURL)を入力', 'https://');
+      if(!url || url==='https://') return;
+    }
+    if(!url) return;
+    els.dataStatus.textContent = '同期中…';
+    try{
+      const resp = await fetch(url, { cache:'no-store' });
+      if(!resp.ok) throw new Error('HTTP '+resp.status);
+      const arr = normalize(await resp.json());
+      if(!arr.length){ els.dataStatus.textContent = '同期結果に有効な座標が見つかりません'; return; }
+      localStorage.setItem(LS_URL, url);
+      setStops(arr, 'URL同期');
+    }catch(err){
+      els.dataStatus.textContent = '同期失敗: ' + err.message + '（オフライン時は保存データで動作）';
+    }
+  }
+  els.syncBtn.addEventListener('click', ()=> syncFromUrl(true));
 
   // ---- 判定半径 ----
   els.radius.value = radiusM; els.radiusVal.textContent = radiusM+'m';
