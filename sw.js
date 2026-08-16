@@ -1,7 +1,7 @@
 // バス停GPS検証 Service Worker
 // アプリ本体をキャッシュし、2回目以降はオフライン・通信ゼロで起動させる。
 // バス停データは localStorage に持つのでSWのキャッシュ対象外(通信不要)。
-const CACHE = 'gps-check-v3';
+const CACHE = 'gps-check-v4';
 const ASSETS = [
   './gps_check.html',
   './manifest.webmanifest',
@@ -23,9 +23,13 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// キャッシュ優先(cache-first)。無ければ取得してキャッシュに追加。
+// キャッシュ優先(cache-first)。ただし「同一オリジン(アプリ本体)」だけを扱う。
+// APIなど別オリジン(tokyoknock.com 等)はSWが横取りせず、そのままブラウザに任せる。
+// (別オリジンを横取りすると、取得失敗時にHTMLを返してしまい同期失敗の原因になる)
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  const url = new URL(e.request.url);
+  if (url.origin !== self.location.origin) return;   // 別オリジンは素通し
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached;
