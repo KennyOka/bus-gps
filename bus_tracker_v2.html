@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>バス運行モニター</title>
+<style>
+  :root{
+    --bg: #14171c;
+    --panel: #1c2029;
+    --panel-2: #232833;
+    --line: #2e3440;
+    --ink: #eef0f4;
+    --ink-dim: #8a91a3;
+    --ink-faint: #565d6d;
+    --ok: #35d68a;
+    --early: #ef4444;
+    --mono: 'DejaVu Sans Mono', 'Courier New', ui-monospace, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
+  html,body{margin:0; height:100%; background:var(--bg); color:var(--ink); font-family:var(--sans); overflow-x:hidden;}
+  body{display:flex; flex-direction:column; min-height:100vh; transition: background 0.3s ease;}
+
+  body.state-early{ animation: flashRed 0.9s infinite; }
+  @keyframes flashRed{ 0%,100%{ background:#3a0d0d; } 50%{ background:#8f1d1d; } }
+  body.state-ok{ background:#0d2b1e; }
+  body.state-finished{ background: var(--bg); }
+
+  .topbar{ padding: 12px 16px 8px; border-bottom: 1px solid rgba(255,255,255,0.08); display:flex; justify-content:space-between; align-items:flex-start; }
+  .route-name{ font-size:14px; font-weight:600; }
+  .route-sub{ font-size:11px; color:var(--ink-dim); margin-top:2px; }
+  .clock{ font-family:var(--mono); font-size:13px; color:var(--ink-dim); font-variant-numeric: tabular-nums; }
+  .load-route-btn{
+    font-size:10.5px; background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
+    padding:5px 8px; border-radius:6px; margin-top:6px;
+  }
+
+  .status-zone{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 10px 20px; text-align:center; }
+  .state-tag{
+    font-size:14px; font-weight:800; letter-spacing:0.08em; padding:6px 18px; border-radius:20px; margin-bottom:14px;
+  }
+  .state-tag.early{ background: var(--early); color:#fff; }
+  .state-tag.ok{ background: var(--ok); color:#062f1c; }
+  .state-tag.approaching{ background: var(--panel-2); color:var(--ink-dim); border:1px solid var(--line); }
+  .state-tag.finished{ background:var(--panel-2); color:var(--ink-dim); }
+
+  .countdown{
+    font-family:var(--mono); font-variant-numeric: tabular-nums;
+    font-size:76px; font-weight:800; line-height:1; letter-spacing:-0.01em;
+  }
+  .countdown.early{ color:#fff; }
+  .countdown.ok{ color:var(--ok); }
+  .countdown.approaching{ color:var(--ink); }
+  .countdown-caption{ margin-top:10px; font-size:13px; color:var(--ink-dim); }
+  body.state-early .countdown-caption{ color:rgba(255,255,255,0.85); }
+
+  .next-stop-card{
+    margin-top: 24px; width:100%; max-width:420px; background:rgba(0,0,0,0.18);
+    border:1px solid rgba(255,255,255,0.12); border-radius:14px; padding:14px 18px;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .next-stop-label{ font-size:11px; color:var(--ink-dim); letter-spacing:0.08em; margin-bottom:4px;}
+  .next-stop-name{ font-size:19px; font-weight:700; }
+  .next-stop-eta{ text-align:right; }
+  .next-stop-eta-time{ font-family:var(--mono); font-size:20px; font-weight:700; font-variant-numeric: tabular-nums;}
+  .next-stop-eta-label{ font-size:10px; color:var(--ink-dim); }
+
+  .rail-wrap{ padding: 4px 20px 14px; }
+  .rail-title{ font-size:11px; color:var(--ink-dim); margin-bottom:10px; letter-spacing:0.06em; }
+  .rail{ position:relative; height:54px; }
+  .rail-track{ position:absolute; left:10px; right:10px; top:24px; height:2px; background: rgba(255,255,255,0.15); }
+  .rail-track-fill{ position:absolute; left:10px; top:24px; height:2px; background: var(--ink-dim); transition: width 0.4s ease; }
+  .stop-dot{ position:absolute; top:16px; width:14px; height:14px; border-radius:50%; background:rgba(255,255,255,0.08); border:2px solid var(--ink-faint); transform: translateX(-50%); transition: all 0.3s ease; }
+  .stop-dot.passed{ background:var(--ink-faint); border-color:var(--ink-faint); }
+  .stop-dot.current-target{ border-color: var(--ink); }
+  .stop-label{ position:absolute; top:34px; transform:translateX(-50%); font-size:9px; color:var(--ink-faint); white-space:nowrap; max-width:60px; overflow:hidden; text-overflow:ellipsis; }
+  .bus-marker{ position:absolute; top:11px; width:20px; height:20px; border-radius:50%; transform: translateX(-50%); display:flex; align-items:center; justify-content:center; font-size:11px; transition: left 0.5s linear, background 0.4s ease; box-shadow: 0 0 0 4px var(--bg); }
+
+  .controls{ border-top:1px solid rgba(255,255,255,0.08); padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  button{ font-family: var(--sans); border:none; border-radius:10px; padding:11px 16px; font-size:12.5px; font-weight:600; cursor:pointer; color:var(--ink); background:var(--panel-2); border:1px solid var(--line); }
+  button.primary{ background:var(--ink); color:var(--bg); }
+  button:disabled{ opacity:0.4; }
+  .mode-toggle{ display:flex; gap:6px; margin-left:auto; }
+  .mode-toggle button{ padding:8px 12px; font-size:10.5px; }
+  .mode-toggle button.active{ background:var(--ink); color:var(--bg); }
+  .sim-controls{ display:flex; align-items:center; gap:10px; width:100%; padding-top:2px; }
+  .sim-controls input[type=range]{ flex:1; accent-color: var(--ink-dim); }
+  .sim-controls span{ font-size:10.5px; color:var(--ink-dim); font-family:var(--mono); min-width:64px; text-align:right;}
+  .gps-note{ font-size:10.5px; color:var(--ink-faint); padding: 0 16px 8px; text-align:center; }
+  .file-input-hidden{ display:none; }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div>
+      <div class="route-name" id="routeName">サンプル路線(データ未読込)</div>
+      <div class="route-sub" id="routeSub">運行前</div>
+      <button class="load-route-btn" id="loadRouteBtn">📂 記録ツールのJSONを読み込む</button>
+      <input type="file" id="routeFileInput" class="file-input-hidden" accept="application/json,.json">
+    </div>
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
+
+  <div class="status-zone" id="statusZone">
+    <div class="state-tag approaching" id="stateTag">運行前</div>
+    <div class="countdown approaching" id="countdown">--:--</div>
+    <div class="countdown-caption" id="caption">運行を開始してください</div>
+
+    <div class="next-stop-card">
+      <div>
+        <div class="next-stop-label">対象バス停</div>
+        <div class="next-stop-name" id="nextStopName">—</div>
+      </div>
+      <div class="next-stop-eta">
+        <div class="next-stop-eta-time" id="nextStopEta">--:--</div>
+        <div class="next-stop-eta-label">定刻</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rail-wrap">
+    <div class="rail-title">路線進行状況</div>
+    <div class="rail" id="rail"></div>
+  </div>
+
+  <div class="gps-note" id="gpsNote"></div>
+
+  <div class="controls">
+    <button class="primary" id="startBtn">運行開始</button>
+    <button id="stopBtn" disabled>運行終了</button>
+    <div class="mode-toggle">
+      <button id="modeGps" class="active">実GPS</button>
+      <button id="modeSim">デモ走行</button>
+    </div>
+    <div class="sim-controls" id="simControls" style="display:none;">
+      <span id="simTimeLabel">起点</span>
+      <input type="range" id="simSlider" min="0" max="1000" value="0" step="1">
+      <span id="simDelayLabel">±0秒</span>
+    </div>
+  </div>
+
+<script>
+(function(){
+
+  const STOP_RADIUS_M = 40; // この距離以内を「バス停に到着した」とみなす
+
+  // ---- サンプル路線データ(JSON未読込時の初期値。記録ツールの出力を読み込むと上書きされる) ----
+  let ROUTE = {
+    name: "名瀬 → 古仁屋線(サンプル)",
+    stops: [
+      { name: "名瀬バスセンター", lat: 28.3775, lng: 129.4936, scheduledMin: 0   },
+      { name: "小湊",             lat: 28.3403, lng: 129.4780, scheduledMin: 12  },
+      { name: "住用支所前",       lat: 28.3020, lng: 129.4990, scheduledMin: 27  },
+      { name: "西仲間",           lat: 28.2610, lng: 129.4870, scheduledMin: 39  },
+      { name: "朝仁",             lat: 28.2205, lng: 129.4530, scheduledMin: 52  },
+      { name: "瀬戸内町役場前",   lat: 28.1590, lng: 129.3210, scheduledMin: 68  },
+      { name: "古仁屋",           lat: 28.1500, lng: 129.3100, scheduledMin: 74  }
+    ]
+  };
+
+  const els = {
+    routeName: document.getElementById('routeName'),
+    routeSub: document.getElementById('routeSub'),
+    clock: document.getElementById('clock'),
+    loadRouteBtn: document.getElementById('loadRouteBtn'),
+    routeFileInput: document.getElementById('routeFileInput'),
+    stateTag: document.getElementById('stateTag'),
+    countdown: document.getElementById('countdown'),
+    caption: document.getElementById('caption'),
+    nextStopName: document.getElementById('nextStopName'),
+    nextStopEta: document.getElementById('nextStopEta'),
+    rail: document.getElementById('rail'),
+    gpsNote: document.getElementById('gpsNote'),
+    startBtn: document.getElementById('startBtn'),
+    stopBtn: document.getElementById('stopBtn'),
+    modeGps: document.getElementById('modeGps'),
+    modeSim: document.getElementById('modeSim'),
+    simControls: document.getElementById('simControls'),
+    simSlider: document.getElementById('simSlider'),
+    simTimeLabel: document.getElementById('simTimeLabel'),
+    simDelayLabel: document.getElementById('simDelayLabel'),
+  };
+
+  function applyRoute(route){
+    ROUTE = route;
+    els.routeName.textContent = ROUTE.name;
+    buildRail();
+  }
+  els.routeName.textContent = ROUTE.name;
+
+  // ---- 記録ツールの出力JSONを読み込み、そのまま路線データとして使う ----
+  els.loadRouteBtn.addEventListener('click', () => els.routeFileInput.click());
+  els.routeFileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!Array.isArray(data.stops) || data.stops.length < 2){
+          els.gpsNote.textContent = '読み込んだJSONに有効な stops 配列(2件以上)が見つかりません';
+          return;
+        }
+        applyRoute({
+          name: data.name || '読み込んだ路線',
+          stops: data.stops.map(s => ({ name: s.name, lat: s.lat, lng: s.lng, scheduledMin: s.scheduledMin }))
+        });
+        els.gpsNote.textContent = `路線データを読み込みました(バス停 ${data.stops.length}件)`;
+      } catch(err){
+        els.gpsNote.textContent = 'JSONの読み込みに失敗しました';
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+
+  let mode = 'gps';
+  let tripStartMs = null;
+  let watchId = null;
+  let targetIndex = 0;      // 現在アラート判定の対象にしているバス停のインデックス
+  let lastAtStopIndex = -1; // 直近まで「到着範囲内」だったバス停インデックス(離脱検知用)
+  let simDelayOffsetSec = 0;
+
+  const R = 6371000;
+  function distMeters(lat1,lng1,lat2,lng2){
+    const toRad = d => d*Math.PI/180;
+    const dLat = toRad(lat2-lat1), dLng = toRad(lng2-lng1);
+    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  // ---- ラベル表示用の座標平面変換(進行バーの見た目にのみ使用。アラート判定には使わない) ----
+  let stopsXY = [];
+  function rebuildXY(){
+    const lat0 = ROUTE.stops[0].lat * Math.PI/180;
+    stopsXY = ROUTE.stops.map(s => {
+      const x = R * (s.lng - ROUTE.stops[0].lng) * Math.PI/180 * Math.cos(lat0);
+      const y = R * (s.lat - ROUTE.stops[0].lat) * Math.PI/180;
+      return {x,y, ...s};
+    });
+  }
+  function projectToRoute(lat,lng){
+    const lat0 = ROUTE.stops[0].lat * Math.PI/180;
+    const x = R * (lng - ROUTE.stops[0].lng) * Math.PI/180 * Math.cos(lat0);
+    const y = R * (lat - ROUTE.stops[0].lat) * Math.PI/180;
+    let best = null;
+    for (let i=0;i<stopsXY.length-1;i++){
+      const A = stopsXY[i], B = stopsXY[i+1];
+      const ABx=B.x-A.x, ABy=B.y-A.y, APx=x-A.x, APy=y-A.y;
+      const abLenSq = ABx*ABx+ABy*ABy;
+      let t = abLenSq===0?0:(APx*ABx+APy*ABy)/abLenSq;
+      t = Math.max(0, Math.min(1,t));
+      const cx=A.x+t*ABx, cy=A.y+t*ABy;
+      const dist = Math.hypot(x-cx, y-cy);
+      if (!best || dist<best.dist) best = {segIndex:i, t, dist};
+    }
+    return best;
+  }
+
+  function fmtClockDate(d){ return d.toLocaleTimeString('ja-JP', {hour12:false}); }
+  function fmtClockAt(min){
+    const base = new Date(tripStartMs || Date.now());
+    base.setSeconds(base.getSeconds() + Math.round(min*60));
+    return base.toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit', hour12:false});
+  }
+  function fmtSec(sec){
+    const sign = sec < 0 ? '-' : '';
+    const abs = Math.round(Math.abs(sec));
+    const h = Math.floor(abs/3600), m = Math.floor((abs%3600)/60), s = abs%60;
+    if (h > 0) return `${sign}${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    return `${sign}${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  }
+
+  // ---- 進行バー ----
+  function buildRail(){
+    rebuildXY();
+    els.rail.innerHTML = '';
+    const track = document.createElement('div'); track.className='rail-track'; els.rail.appendChild(track);
+    const fill = document.createElement('div'); fill.className='rail-track-fill'; fill.id='railFill'; els.rail.appendChild(fill);
+    const totalMin = ROUTE.stops[ROUTE.stops.length-1].scheduledMin || 1;
+    ROUTE.stops.forEach((s,i) => {
+      const pct = (s.scheduledMin/totalMin)*100;
+      const dot = document.createElement('div'); dot.className='stop-dot'; dot.style.left=pct+'%'; dot.dataset.idx=i;
+      els.rail.appendChild(dot);
+      const label = document.createElement('div'); label.className='stop-label'; label.style.left=pct+'%'; label.textContent=s.name;
+      els.rail.appendChild(label);
+    });
+    const bus = document.createElement('div'); bus.className='bus-marker'; bus.id='busMarker'; bus.textContent='🚌';
+    els.rail.appendChild(bus);
+  }
+  buildRail();
+
+  function updateRailVisual(lat,lng,color){
+    const proj = projectToRoute(lat,lng);
+    if (!proj) return;
+    const totalMin = ROUTE.stops[ROUTE.stops.length-1].scheduledMin || 1;
+    const A = ROUTE.stops[proj.segIndex], B = ROUTE.stops[proj.segIndex+1];
+    const curMin = A.scheduledMin + proj.t*(B.scheduledMin - A.scheduledMin);
+    const pct = (curMin/totalMin)*100;
+    document.getElementById('railFill').style.width = pct+'%';
+    const bm = document.getElementById('busMarker');
+    bm.style.left = pct+'%';
+    bm.style.background = color;
+    document.querySelectorAll('.stop-dot').forEach(dot => {
+      const idx = parseInt(dot.dataset.idx);
+      dot.classList.toggle('passed', idx <= proj.segIndex);
+      dot.classList.toggle('current-target', idx === targetIndex);
+    });
+  }
+
+  // ---- 早発判定の中核ロジック ----
+  function evaluate(lat,lng,nowMs){
+    if (targetIndex >= ROUTE.stops.length){
+      return { state:'finished' };
+    }
+    const stop = ROUTE.stops[targetIndex];
+    const d = distMeters(lat,lng, stop.lat, stop.lng);
+    const elapsedSec = (nowMs - tripStartMs)/1000;
+    const scheduledSec = stop.scheduledMin*60;
+    const remainingSec = scheduledSec - elapsedSec;
+
+    if (d <= STOP_RADIUS_M){
+      lastAtStopIndex = targetIndex;
+      if (remainingSec > 0){
+        return { state:'early', stop, remainingSec, distance:d };
+      } else {
+        return { state:'ok', stop, remainingSec, distance:d };
+      }
+    } else {
+      if (lastAtStopIndex === targetIndex){
+        // 到着範囲から抜けた = 発車した とみなし、次のバス停へ
+        targetIndex++;
+        lastAtStopIndex = -1;
+        if (targetIndex >= ROUTE.stops.length) return { state:'finished' };
+        return evaluate(lat,lng,nowMs); // 新ターゲットで再評価
+      }
+      return { state:'approaching', stop, remainingSec, distance:d };
+    }
+  }
+
+  function render(status, lat, lng){
+    const zone = document.body;
+    zone.classList.remove('state-early','state-ok','state-finished');
+    els.stateTag.classList.remove('early','ok','approaching','finished');
+    els.countdown.classList.remove('early','ok','approaching');
+
+    if (status.state === 'finished'){
+      zone.classList.add('state-finished');
+      els.stateTag.classList.add('finished'); els.stateTag.textContent = '運行終了(全バス停通過)';
+      els.countdown.classList.add('approaching'); els.countdown.textContent = '--:--';
+      els.caption.textContent = 'お疲れさまでした';
+      els.nextStopName.textContent = '—'; els.nextStopEta.textContent = '--:--';
+      return;
+    }
+
+    els.nextStopName.textContent = status.stop.name;
+    els.nextStopEta.textContent = fmtClockAt(status.stop.scheduledMin);
+
+    if (status.state === 'early'){
+      zone.classList.add('state-early');
+      els.stateTag.classList.add('early'); els.stateTag.textContent = '🚨 早発注意';
+      els.countdown.classList.add('early'); els.countdown.textContent = fmtSec(status.remainingSec);
+      els.caption.textContent = `定刻まで出発しないでください(あと ${fmtSec(status.remainingSec)})`;
+      updateRailVisual(lat,lng,'var(--early)');
+    } else if (status.state === 'ok'){
+      zone.classList.add('state-ok');
+      els.stateTag.classList.add('ok'); els.stateTag.textContent = '✅ 正常運行';
+      els.countdown.classList.add('ok'); els.countdown.textContent = fmtSec(status.remainingSec);
+      els.caption.textContent = status.remainingSec < -3
+        ? `定刻より約${fmtSec(Math.abs(status.remainingSec))}遅れています(発車可)`
+        : '定刻到達。発車OKです';
+      updateRailVisual(lat,lng,'var(--ok)');
+    } else { // approaching
+      els.stateTag.classList.add('approaching'); els.stateTag.textContent = '走行中';
+      els.countdown.classList.add('approaching'); els.countdown.textContent = fmtSec(status.remainingSec);
+      els.caption.textContent = status.remainingSec >= 0
+        ? '次のバス停の定刻まで(到着後に早発判定します)'
+        : `定刻を${fmtSec(Math.abs(status.remainingSec))}超過して走行中(遅れは問題ありません)`;
+      updateRailVisual(lat,lng,'var(--ink-dim)');
+    }
+  }
+
+  function updatePosition(lat,lng,nowMs){
+    if (!tripStartMs) return;
+    const status = evaluate(lat,lng,nowMs);
+    render(status, lat, lng);
+    els.routeSub.textContent = `運行中 ・ 出発 ${fmtClockDate(new Date(tripStartMs))}`;
+  }
+
+  // ---- 実GPS ----
+  function startGps(){
+    if (!navigator.geolocation){ els.gpsNote.textContent='この端末はGPSに対応していません'; return; }
+    els.gpsNote.textContent = 'GPS取得中…';
+    watchId = navigator.geolocation.watchPosition(
+      pos => { els.gpsNote.textContent = `精度: 約${Math.round(pos.coords.accuracy)}m`; updatePosition(pos.coords.latitude,pos.coords.longitude,Date.now()); },
+      err => { els.gpsNote.textContent = '位置情報エラー: ' + err.message; },
+      { enableHighAccuracy:true, maximumAge:2000, timeout:10000 }
+    );
+  }
+  function stopGps(){ if (watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null; } }
+
+  // ---- デモ走行(スライダーで位置、ボタンで早発/正常運行をテスト) ----
+  function runSim(){
+    const totalMin = ROUTE.stops[ROUTE.stops.length-1].scheduledMin || 1;
+    const sliderPct = els.simSlider.value / els.simSlider.max;
+    const targetMin = sliderPct * totalMin;
+    let segIndex=0, t=0;
+    for (let i=0;i<ROUTE.stops.length-1;i++){
+      if (targetMin >= ROUTE.stops[i].scheduledMin && targetMin <= ROUTE.stops[i+1].scheduledMin){
+        segIndex=i;
+        const span = ROUTE.stops[i+1].scheduledMin - ROUTE.stops[i].scheduledMin;
+        t = span===0?0:(targetMin-ROUTE.stops[i].scheduledMin)/span;
+      }
+    }
+    const A = ROUTE.stops[segIndex], B = ROUTE.stops[segIndex+1];
+    const lat = A.lat + t*(B.lat-A.lat);
+    const lng = A.lng + t*(B.lng-A.lng);
+    const fakeNow = tripStartMs + targetMin*60000 + simDelayOffsetSec*1000;
+    els.simTimeLabel.textContent = new Date(fakeNow).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',hour12:false});
+    els.simDelayLabel.textContent = (simDelayOffsetSec>=0?'+':'') + simDelayOffsetSec + '秒';
+    updatePosition(lat,lng,fakeNow);
+  }
+
+  els.startBtn.addEventListener('click', () => {
+    tripStartMs = Date.now();
+    targetIndex = 0; lastAtStopIndex = -1;
+    els.startBtn.disabled = true; els.stopBtn.disabled = false;
+    els.routeSub.textContent = '運行中';
+    if (mode==='gps') startGps(); else runSim();
+  });
+  els.stopBtn.addEventListener('click', () => {
+    stopGps();
+    tripStartMs = null; targetIndex = 0; lastAtStopIndex = -1;
+    els.startBtn.disabled = false; els.stopBtn.disabled = true;
+    els.routeSub.textContent = '運行終了';
+    document.body.classList.remove('state-early','state-ok'); document.body.classList.add('state-finished');
+    els.stateTag.className='state-tag approaching'; els.stateTag.textContent='運行前';
+    els.countdown.className='countdown approaching'; els.countdown.textContent='--:--';
+    els.caption.textContent = '運行を開始してください';
+    els.nextStopName.textContent='—'; els.nextStopEta.textContent='--:--';
+    els.gpsNote.textContent='';
+  });
+  els.modeGps.addEventListener('click', () => {
+    mode='gps'; els.modeGps.classList.add('active'); els.modeSim.classList.remove('active');
+    els.simControls.style.display='none';
+    if (tripStartMs) startGps();
+  });
+  els.modeSim.addEventListener('click', () => {
+    mode='sim'; els.modeSim.classList.add('active'); els.modeGps.classList.remove('active');
+    stopGps(); els.simControls.style.display='flex';
+    if (tripStartMs) runSim();
+  });
+  els.simSlider.addEventListener('input', () => { if (tripStartMs && mode==='sim') runSim(); });
+  document.getElementById('simDelayLabel').addEventListener('click', () => {
+    // タップで早発テスト(-30秒)⇔正常運行テスト(0秒)を切り替え
+    simDelayOffsetSec = simDelayOffsetSec === 0 ? -30 : 0;
+    if (tripStartMs && mode==='sim') runSim();
+  });
+
+  setInterval(() => { els.clock.textContent = fmtClockDate(new Date()); }, 1000);
+  els.clock.textContent = fmtClockDate(new Date());
+
+})();
+</script>
+</body>
+</html>
