@@ -131,9 +131,10 @@
   const LS_STOPS = 'gpscheck_stops';
   const LS_RADIUS = 'gpscheck_radius';
   const LS_URL = 'gpscheck_syncurl';
+  const DEFAULT_SYNC_URL = 'https://tokyoknock.com/bus/api/busstops.php'; // 固定同期先(busstops.php)
 
   let stops = [];      // {name, lat, lng} 全件メモリ常駐
-  let radiusM = parseInt(localStorage.getItem(LS_RADIUS) || '40', 10);
+  let radiusM = parseInt(lsGet(LS_RADIUS) || '40', 10);
   let watchId = null;
   let insideStop = null;   // 現在「判定半径内」に居るバス停
   let insideMin = Infinity;
@@ -161,6 +162,11 @@
     markBtn: document.getElementById('markBtn'),
     clearDataBtn: document.getElementById('clearDataBtn'),
   };
+
+  // localStorage を例外安全に(data:オリジンやプライベートブラウズでも落ちないように)
+  function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+  function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+  function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
 
   // ---- 距離(ハーバサイン) ----
   const R = 6371000;
@@ -190,7 +196,7 @@
   }
   function setStops(arr, source){
     stops = arr;
-    localStorage.setItem(LS_STOPS, JSON.stringify(stops));
+    lsSet(LS_STOPS, JSON.stringify(stops));
     els.dataStatus.textContent = `バス停 ${stops.length}件 読込済み` + (source?` (${source})`:'') ;
     els.dataStatus.classList.toggle('loaded', stops.length>0);
   }
@@ -211,11 +217,7 @@
 
   // ---- URLから同期(APIを一度だけ取得→キャッシュ。以降はオフライン動作) ----
   async function syncFromUrl(askIfNone){
-    let url = localStorage.getItem(LS_URL);
-    if(!url && askIfNone){
-      url = prompt('同期URL(busstops.php のURL)を入力', 'https://');
-      if(!url || url==='https://') return;
-    }
+    let url = lsGet(LS_URL) || DEFAULT_SYNC_URL;
     if(!url) return;
     els.dataStatus.textContent = '同期中…';
     try{
@@ -223,7 +225,7 @@
       if(!resp.ok) throw new Error('HTTP '+resp.status);
       const arr = normalize(await resp.json());
       if(!arr.length){ els.dataStatus.textContent = '同期結果に有効な座標が見つかりません'; return; }
-      localStorage.setItem(LS_URL, url);
+      lsSet(LS_URL, url);
       setStops(arr, 'URL同期');
     }catch(err){
       els.dataStatus.textContent = '同期失敗: ' + err.message + '（オフライン時は保存データで動作）';
@@ -236,7 +238,7 @@
   els.radius.addEventListener('input', ()=>{
     radiusM = parseInt(els.radius.value,10);
     els.radiusVal.textContent = radiusM+'m';
-    localStorage.setItem(LS_RADIUS, String(radiusM));
+    lsSet(LS_RADIUS, String(radiusM));
   });
 
   // ---- GPS ----
@@ -348,17 +350,18 @@
   els.clearLogBtn.addEventListener('click', ()=>{ passLog=[]; insideStop=null; insideMin=Infinity; renderLog(); });
   els.clearDataBtn.addEventListener('click', ()=>{
     if(!confirm('読み込んだバス停データを消去します(通過ログは残ります)。よろしいですか?')) return;
-    stops=[]; localStorage.removeItem(LS_STOPS);
+    stops=[]; lsDel(LS_STOPS);
     els.dataStatus.textContent='バス停データ未読込'; els.dataStatus.classList.remove('loaded');
   });
 
   // ---- 起動時: localStorage から全件復元(通信なし) ----
   (function boot(){
     try{
-      const saved=localStorage.getItem(LS_STOPS);
+      const saved=lsGet(LS_STOPS);
       if(saved){ const arr=JSON.parse(saved); if(Array.isArray(arr)&&arr.length){ setStops(arr,'保存データ'); } }
     }catch(e){}
     renderLog();
+    if(navigator.onLine){ syncFromUrl(false); }  // 固定URLから自動同期(オフライン時は保存データで動作)
   })();
 
   // ---- Service Worker 登録(オフライン・低通信のPWA化) ----
