@@ -1,7 +1,7 @@
 // バス停GPS検証 Service Worker
 // アプリ本体をキャッシュし、2回目以降はオフライン・通信ゼロで起動させる。
 // バス停データは localStorage に持つのでSWのキャッシュ対象外(通信不要)。
-const CACHE = 'gps-check-v5';
+const CACHE = 'gps-check-v6';
 const ASSETS = [
   './gps_check.html',
   './bus_monitor.html',

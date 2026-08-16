@@ -210,7 +210,7 @@
     lsSet('mon_dia', dia);
     setupMsg('取得中…', false);
     try{
-      const r=await fetch(`${API_BASE}courses.php?dia_no=${dia}&day_type=${dayType}`, {cache:'no-store'});
+      const r=await fetch(`${API_BASE}courses.php?dia_no=${dia}&day_type=${dayType}&_=${Date.now()}`, {cache:'no-store'});
       const j=await r.json();
       if(!r.ok || j.error){ setupMsg('取得失敗: '+(j.error||r.status), true); return; }
       if(!j.courses || !j.courses.length){ setupMsg(`ダイヤ ${j.dia_no}(${dayType===1?'平日':'土日祝'})のコースが見つかりません`, true); return; }
@@ -247,9 +247,12 @@
     course=c;
     $('gpsNote').textContent='停留所データを取得中…';
     try{
-      const r=await fetch(`${API_BASE}course_stops.php?dia_course_id=${c.dia_course_id}`, {cache:'no-store'});
-      const j=await r.json();
-      if(!r.ok || j.error || !j.stops || !j.stops.length){ alert('停留所データが取得できません'); return; }
+      const r=await fetch(`${API_BASE}course_stops.php?dia_course_id=${c.dia_course_id}&_=${Date.now()}`, {cache:'no-store'});
+      if(!r.ok){ alert('停留所データ取得エラー: HTTP '+r.status); return; }
+      let j=null;
+      try{ j=await r.json(); }catch(pe){ alert('停留所データの解析に失敗しました(JSONではない応答)。SW更新のため再読み込みしてください'); return; }
+      if(!j || j.error){ alert('停留所データ取得エラー: '+((j&&j.error)||'不明')); return; }
+      if(!j.stops || !j.stops.length){ alert('このコースには停留所データがありません(count=0)'); return; }
       stops=j.stops;
       targetIndex=0; lastAtStopIndex=-1;
       $('monCourse').textContent=`${c.start_place} → ${c.end_place} (${c.departure_time}発)`;
