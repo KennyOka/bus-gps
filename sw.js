@@ -1,7 +1,7 @@
 // バス停GPS検証 Service Worker
 // アプリ本体をキャッシュし、2回目以降はオフライン・通信ゼロで起動させる。
 // バス停データは localStorage に持つのでSWのキャッシュ対象外(通信不要)。
-const CACHE = 'gps-check-v6';
+const CACHE = 'gps-check-v7';
 const ASSETS = [
   './gps_check.html',
   './bus_monitor.html',
@@ -25,21 +25,33 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// キャッシュ優先(cache-first)。ただし「同一オリジン(アプリ本体)」だけを扱う。
-// APIなど別オリジン(tokyoknock.com 等)はSWが横取りせず、そのままブラウザに任せる。
-// (別オリジンを横取りすると、取得失敗時にHTMLを返してしまい同期失敗の原因になる)
+// 同一オリジン(アプリ本体)だけを扱う。APIなど別オリジンはSWが横取りせず素通し。
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;   // 別オリジンは素通し
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(resp => {
+
+  const isHTML = e.request.mode === 'navigate' ||
+                 (e.request.headers.get('accept') || '').includes('text/html');
+
+  if (isHTML) {
+    // HTML はネットワーク優先(常に最新コードを取得。古い版が残らない)。オフライン時のみキャッシュ。
+    e.respondWith(
+      fetch(e.request).then(resp => {
         const copy = resp.clone();
         caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
         return resp;
-      }).catch(() => caches.match('./gps_check.html'));
-    })
+      }).catch(() => caches.match(e.request).then(c => c || caches.match('./gps_check.html')))
+    );
+    return;
+  }
+
+  // それ以外(アイコン/manifest等)はキャッシュ優先。
+  e.respondWith(
+    caches.match(e.request).then(cached => cached || fetch(e.request).then(resp => {
+      const copy = resp.clone();
+      caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
+      return resp;
+    }))
   );
 });
