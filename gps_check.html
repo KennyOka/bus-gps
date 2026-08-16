@@ -131,7 +131,8 @@
   const LS_STOPS = 'gpscheck_stops';
   const LS_RADIUS = 'gpscheck_radius';
   const LS_URL = 'gpscheck_syncurl';
-  const DEFAULT_SYNC_URL = 'https://tokyoknock.com/bus/api/busstops.php'; // 固定同期先(busstops.php)
+  // tokyoknock.com 配下なら相対(同一オリジン)、それ以外は絶対URL
+  const DEFAULT_SYNC_URL = (location.origin === 'https://tokyoknock.com') ? 'api/busstops.php' : 'https://tokyoknock.com/bus/api/busstops.php';
 
   let stops = [];      // {name, lat, lng} 全件メモリ常駐
   let radiusM = parseInt(lsGet(LS_RADIUS) || '40', 10);

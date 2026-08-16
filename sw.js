@@ -1,7 +1,7 @@
 // バス停GPS検証 Service Worker
 // アプリ本体をキャッシュし、2回目以降はオフライン・通信ゼロで起動させる。
 // バス停データは localStorage に持つのでSWのキャッシュ対象外(通信不要)。
-const CACHE = 'gps-check-v7';
+const CACHE = 'gps-check-v8';
 const ASSETS = [
   './gps_check.html',
   './bus_monitor.html',
@@ -30,6 +30,7 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;   // 別オリジンは素通し
+  if (url.pathname.includes('/api/')) return;        // API は素通し(キャッシュしない=常に最新)
 
   const isHTML = e.request.mode === 'navigate' ||
                  (e.request.headers.get('accept') || '').includes('text/html');

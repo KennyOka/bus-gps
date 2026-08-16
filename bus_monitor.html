@@ -97,12 +97,14 @@
   .controls button{ padding:13px 10px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:13px; font-weight:600; }
   .controls .grow{ flex:1; }
   .controls .adv{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
-  .radius-row{ display:flex; align-items:center; gap:10px; padding:8px 16px; }
-  .radius-row label{ font-size:12px; color:var(--ink-dim); white-space:nowrap; }
-  .radius-row .rv{ font-family:var(--mono); font-size:14px; min-width:46px; text-align:right; }
-  .sim{ display:flex; align-items:center; gap:10px; width:100%; padding:6px 16px 4px; }
-  .sim .off{ font-family:var(--mono); font-size:12px; color:var(--ink-dim); min-width:80px; text-align:right; }
-  .radius-row input[type=range], .sim input[type=range]{ flex:1; accent-color:var(--neutral); height:30px; }
+  .radius-row{ display:flex; align-items:center; gap:12px; padding:8px 16px; }
+  .radius-row label{ font-size:13px; color:var(--ink-dim); white-space:nowrap; }
+  .radius-row select{ background:var(--panel); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:10px 12px; font-size:16px; font-family:var(--sans); }
+  .sim{ display:flex; flex-direction:column; gap:8px; width:100%; padding:6px 16px 4px; }
+  .sim-line{ display:flex; align-items:center; gap:10px; }
+  .sim-line .sl{ font-size:12px; color:var(--ink-dim); white-space:nowrap; }
+  .sim-line input[type=range]{ flex:1; min-width:0; accent-color:var(--neutral); height:30px; }
+  .sim-off-btn{ width:100%; padding:11px; border-radius:9px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:13px; font-weight:600; }
 </style>
 </head>
 <body>
@@ -165,19 +167,22 @@
       </div>
       <div class="radius-row">
         <label>判定半径</label>
-        <input type="range" id="radius" min="10" max="60" step="5" value="20">
-        <span class="rv" id="radiusVal">20m</span>
+        <select id="radius"></select>
       </div>
       <div class="sim" id="simRow" style="display:none;">
-        <input type="range" id="simStop" min="0" max="0" value="0">
-        <span class="off" id="simOff" title="タップで早発/正常/遅れを切替">早発-30s</span>
+        <div class="sim-line">
+          <span class="sl">対象停</span>
+          <input type="range" id="simStop" min="0" max="0" value="0">
+        </div>
+        <button class="sim-off-btn" id="simOff">早発-30s（タップで切替）</button>
       </div>
     </div>
   </div>
 
 <script>
 (function(){
-  const API_BASE = 'https://tokyoknock.com/bus/api/';
+  // tokyoknock.com 配下なら相対(同一オリジン=CORS不要)、それ以外(GitHub Pages等)は絶対URL
+  const API_BASE = (location.origin === 'https://tokyoknock.com') ? 'api/' : 'https://tokyoknock.com/bus/api/';
   let STOP_RADIUS_M = parseInt(lsGet('mon_radius') || '20', 10);   // 既定20m・画面で変更可
 
   function lsGet(k){ try{return localStorage.getItem(k);}catch(e){return null;} }
@@ -414,12 +419,12 @@
     render(evaluate(stop.lat, stop.lng, fakeNow));
   }
 
-  // ---- 判定半径スライダー(既定20m・localStorage保存) ----
+  // ---- 判定半径プルダウン(5m刻み, 既定20m, localStorage保存) ----
   (function initRadius(){
-    const r=$('radius'), v=$('radiusVal');
-    r.value=STOP_RADIUS_M; v.textContent=STOP_RADIUS_M+'m';
-    r.addEventListener('input', ()=>{
-      STOP_RADIUS_M=parseInt(r.value,10); v.textContent=STOP_RADIUS_M+'m'; lsSet('mon_radius',String(STOP_RADIUS_M));
+    const r=$('radius');
+    for(let m=5;m<=60;m+=5){ const o=document.createElement('option'); o.value=m; o.textContent=m+' m'; if(m===STOP_RADIUS_M) o.selected=true; r.appendChild(o); }
+    r.addEventListener('change', ()=>{
+      STOP_RADIUS_M=parseInt(r.value,10); lsSet('mon_radius',String(STOP_RADIUS_M));
       if(mode==='demo') runDemo();
     });
   })();
