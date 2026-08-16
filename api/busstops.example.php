@@ -12,25 +12,33 @@
  *   4. GPS検証アプリ(gps_check.html)の「🌐同期」にこのURLを貼る
  *
  * 【安全】m_busstop の is_active=1・座標ありの行のみ返す読み取り専用(SELECT)。書き込み不可。
- * 【前提】config.php が `return ['db' => ['host'=>,'dbname'=>,'user'=>,'pass'=>], ...];`
- *        の形で db セクションを返すことを想定(仕様書の記載に準拠)。
- *        もし定数定義/PDO/独自ヘルパ形式なら、下の接続部分だけ既存apiに合わせて調整。
+ * 【前提】config.php の db セクション = ['host'=>, 'name'=>, 'user'=>, 'pass'=>, 'charset'=>]
+ *        (実DBに準拠。DB名のキーは 'name')。config.phpが配列をreturnする形/変数定義する形の
+ *        どちらでも動くようにしてある。
  */
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');      // バス停座標は公開情報。読み取り専用のため * で許可
 header('Cache-Control: public, max-age=3600');  // 1時間キャッシュ可
 
-// ==== config.php を再利用してDB接続(接続情報はこのファイルに書かない) ====
-$config = require __DIR__ . '/config.php';
-$db = $config['db'];
-$mysqli = @new mysqli($db['host'], $db['user'], $db['pass'], $db['dbname']);
-if ($mysqli->connect_errno) {
+// ==== config.php を再利用してDB接続(db セクション: host/name/user/pass/charset) ====
+$__cfg = require __DIR__ . '/config.php';
+if (is_array($__cfg) && isset($__cfg['db'])) { $config = $__cfg; }  // config.phpが配列をreturnする形
+// それ以外は config.php が $config を定義済み(変数定義する形)
+$db = isset($config['db']) ? $config['db'] : null;
+if (!is_array($db) || !isset($db['host'])) {
     http_response_code(500);
-    echo json_encode(['error' => 'DB接続に失敗しました'], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['error' => 'config.php の db 設定を読めませんでした'], JSON_UNESCAPED_UNICODE);
     exit;
 }
-$mysqli->set_charset('utf8mb4');
+$dbname = $db['name'] ?? ($db['dbname'] ?? null);   // ★DB名のキーは 'name'
+$mysqli = @new mysqli($db['host'], $db['user'], $db['pass'], $dbname);
+if ($mysqli->connect_errno) {
+    http_response_code(500);
+    echo json_encode(['error' => 'DB接続に失敗しました: ' . $mysqli->connect_error], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+$mysqli->set_charset($db['charset'] ?? 'utf8mb4');
 
 $sql = "SELECT busstop_id, name, direction, latitude, longitude, kana, src_busstop_id
         FROM m_busstop
@@ -40,7 +48,7 @@ $sql = "SELECT busstop_id, name, direction, latitude, longitude, kana, src_busst
 $res = $mysqli->query($sql);
 if ($res === false) {
     http_response_code(500);
-    echo json_encode(['error' => 'クエリに失敗しました'], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['error' => 'クエリに失敗しました: ' . $mysqli->error], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
