@@ -1,0 +1,15 @@
+{
+  "name": "バス停GPS検証",
+  "short_name": "GPS検証",
+  "description": "走行中にバス停の前を通ると名前を表示する現場検証ツール",
+  "start_url": "./gps_check.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14171c",
+  "theme_color": "#14171c",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
