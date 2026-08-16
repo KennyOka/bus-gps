@@ -14,16 +14,19 @@
   :root{
     --bg:#14171c; --panel:#1c2029; --panel-2:#232833; --line:#2e3440;
     --ink:#eef0f4; --ink-dim:#8a91a3; --ink-faint:#565d6d;
-    --ok:#35d68a; --early:#ef4444; --neutral:#4da3ff;
+    --ok:#35d68a; --early:#ef4444; --neutral:#4da3ff; --late-y:#f0b93d; --late-o:#ff8c3a;
     --mono:'DejaVu Sans Mono','Courier New',ui-monospace,monospace;
     --sans:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans','Noto Sans JP',sans-serif;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0; min-height:100%; background:var(--bg); color:var(--ink); font-family:var(--sans);}
-  body{display:flex; flex-direction:column; min-height:100vh; transition:background .3s ease; padding-top:env(safe-area-inset-top);}
+  body{display:flex; flex-direction:column; min-height:100vh; transition:background .3s ease;
+       padding-top:calc(env(safe-area-inset-top) + 10px); padding-bottom:calc(env(safe-area-inset-bottom) + 16px);}
   body.state-early{ animation:flashRed .9s infinite; }
   @keyframes flashRed{ 0%,100%{background:#3a0d0d;} 50%{background:#8f1d1d;} }
   body.state-ok{ background:#0d2b1e; }
+  body.state-late-y{ background:#2e2606; }
+  body.state-late-o{ background:#331a06; }
 
   .screen{ display:none; flex-direction:column; flex:1; min-height:0; }
   .screen.active{ display:flex; }
@@ -67,12 +70,16 @@
   .state-tag{ font-size:20px; font-weight:800; letter-spacing:.06em; padding:8px 22px; border-radius:22px; margin-bottom:14px; background:var(--panel-2); color:var(--ink-dim); border:1px solid var(--line); }
   .state-tag.early{ background:var(--early); color:#fff; border-color:var(--early); }
   .state-tag.ok{ background:var(--ok); color:#062f1c; border-color:var(--ok); }
+  .state-tag.late-y{ background:var(--late-y); color:#241c00; border-color:var(--late-y); }
+  .state-tag.late-o{ background:var(--late-o); color:#2a1400; border-color:var(--late-o); }
   .diff-label{ font-size:12px; letter-spacing:.14em; color:var(--ink-dim); text-transform:uppercase; margin-bottom:6px; }
   .diff{ font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:82px; font-weight:800; line-height:1; }
   body.state-early .diff{ color:#fff; }
   .diff.ok{ color:var(--ok); } .diff.early{ color:#fff; } .diff.appr{ color:var(--ink); }
+  .diff.late-y{ color:var(--late-y); } .diff.late-o{ color:var(--late-o); }
   .caption{ margin-top:12px; font-size:16px; color:var(--ink-dim); }
   body.state-early .caption{ color:rgba(255,255,255,.9); }
+  .next-prev{ margin-top:12px; font-size:15px; color:var(--ink-dim); }
   .target-card{ margin-top:22px; width:100%; max-width:440px; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.12); border-radius:14px; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; }
   .target-name{ font-size:24px; font-weight:700; text-align:left; }
   .target-eta{ text-align:right; }
@@ -86,13 +93,16 @@
   .rail-txt{ font-size:11px; color:var(--ink-faint); padding:2px 16px 8px; }
   .gps-note{ font-size:11px; color:var(--ink-faint); text-align:center; padding:0 16px 6px; }
 
-  .controls{ border-top:1px solid var(--line); padding:10px 16px calc(12px + env(safe-area-inset-bottom)); display:flex; gap:8px; flex-wrap:wrap; }
-  .controls button{ padding:12px 10px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:13px; font-weight:600; }
+  .controls{ border-top:1px solid var(--line); padding:12px 16px 8px; display:flex; gap:8px; flex-wrap:wrap; }
+  .controls button{ padding:13px 10px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:13px; font-weight:600; }
   .controls .grow{ flex:1; }
   .controls .adv{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
-  .sim{ display:flex; align-items:center; gap:10px; width:100%; padding-top:4px; }
-  .sim input[type=range]{ flex:1; accent-color:var(--neutral); }
-  .sim .off{ font-family:var(--mono); font-size:11px; color:var(--ink-dim); min-width:74px; text-align:right; }
+  .radius-row{ display:flex; align-items:center; gap:10px; padding:8px 16px; }
+  .radius-row label{ font-size:12px; color:var(--ink-dim); white-space:nowrap; }
+  .radius-row .rv{ font-family:var(--mono); font-size:14px; min-width:46px; text-align:right; }
+  .sim{ display:flex; align-items:center; gap:10px; width:100%; padding:6px 16px 4px; }
+  .sim .off{ font-family:var(--mono); font-size:12px; color:var(--ink-dim); min-width:80px; text-align:right; }
+  .radius-row input[type=range], .sim input[type=range]{ flex:1; accent-color:var(--neutral); height:30px; }
 </style>
 </head>
 <body>
@@ -142,6 +152,7 @@
           <div><div class="l" style="font-size:10px;color:var(--ink-dim)">対象バス停</div><div class="target-name" id="targetName">—</div></div>
           <div class="target-eta"><div class="t" id="targetEta">--:--</div><div class="l">定刻</div></div>
         </div>
+        <div class="next-prev" id="nextPrev"></div>
       </div>
       <div class="rail" id="rail"></div>
       <div class="rail-txt" id="railTxt"></div>
@@ -151,6 +162,11 @@
         <button id="startBtn" class="grow adv">GPS開始</button>
         <button id="advBtn">発車 →</button>
         <button id="modeBtn">デモ</button>
+      </div>
+      <div class="radius-row">
+        <label>判定半径</label>
+        <input type="range" id="radius" min="10" max="60" step="5" value="20">
+        <span class="rv" id="radiusVal">20m</span>
       </div>
       <div class="sim" id="simRow" style="display:none;">
         <input type="range" id="simStop" min="0" max="0" value="0">
@@ -162,7 +178,7 @@
 <script>
 (function(){
   const API_BASE = 'https://tokyoknock.com/bus/api/';
-  const STOP_RADIUS_M = 40;
+  let STOP_RADIUS_M = parseInt(lsGet('mon_radius') || '20', 10);   // 既定20m・画面で変更可
 
   function lsGet(k){ try{return localStorage.getItem(k);}catch(e){return null;} }
   function lsSet(k,v){ try{localStorage.setItem(k,v);}catch(e){} }
@@ -180,7 +196,8 @@
   const $ = id => document.getElementById(id);
 
   // ---- 画面遷移 ----
-  function show(id){ ['scSetup','scList','scMon'].forEach(s=> $(s).classList.toggle('active', s===id)); }
+  function clearStateClasses(){ document.body.classList.remove('state-early','state-ok','state-late-y','state-late-o'); }
+  function show(id){ ['scSetup','scList','scMon'].forEach(s=> $(s).classList.toggle('active', s===id)); if(id!=='scMon') clearStateClasses(); }
 
   // ---- 時計 ----
   function tickClock(){ const t=new Date().toLocaleTimeString('ja-JP',{hour12:false}); $('clock1').textContent=$('clock2').textContent=$('clock3').textContent=t; }
@@ -288,40 +305,59 @@
 
   // ---- 描画 ----
   function resetMonUI(){
-    document.body.classList.remove('state-early','state-ok');
+    clearStateClasses();
     $('stateTag').className='state-tag'; $('stateTag').textContent='運行前';
     $('diff').className='diff appr'; $('diff').textContent='--:--';
     $('caption').textContent='GPS開始 または デモで確認';
+    $('nextPrev').textContent='';
     if(stops[0]){ $('targetName').textContent=stops[0].name; $('targetEta').textContent=hhmm(stops[0]); }
     updateRail();
   }
+  // 遅れの程度で色分け: 5分以上=黄, 10分以上=橙 (remainingSecは負=遅れ)
+  function lateClass(rem){ const m=-rem/60; if(m>=10) return 'o'; if(m>=5) return 'y'; return null; }
+
   function render(st){
-    document.body.classList.remove('state-early','state-ok');
-    $('stateTag').classList.remove('early','ok'); $('diff').classList.remove('ok','early','appr');
+    clearStateClasses();
+    const tag=$('stateTag'), diff=$('diff');
+    tag.className='state-tag'; diff.className='diff';
+    // 次の停留所プレビュー
+    const nxt = st.state!=='finished' ? stops[targetIndex+1] : null;
+    $('nextPrev').textContent = st.state==='finished' ? '' : (nxt ? `この次 → ${nxt.name}（定刻 ${hhmm(nxt)}）` : 'この次 → 終点');
+
     if(st.state==='finished'){
-      $('stateTag').textContent='運行終了(全停通過)'; $('diff').textContent='--:--'; $('diff').classList.add('appr');
-      $('caption').textContent='お疲れさまでした'; $('targetName').textContent='—'; $('targetEta').textContent='--:--';
+      tag.classList.add('appr'); tag.textContent='運行終了(全停通過)'; diff.classList.add('appr'); diff.textContent='--:--';
+      $('caption').textContent='お疲れさまでした'; $('targetName').textContent='—'; $('targetEta').textContent='--:--'; $('nextPrev').textContent='';
       updateRail(); return;
     }
     $('targetName').textContent=st.stop.name;
     $('targetEta').textContent=hhmm(st.stop);
+
     if(st.state==='early'){
       document.body.classList.add('state-early');
-      $('stateTag').classList.add('early'); $('stateTag').textContent='🚨 早発注意';
-      $('diff').classList.add('early'); $('diff').textContent=fmtSec(st.remainingSec);
+      tag.classList.add('early'); tag.textContent='🚨 早発注意';
+      diff.classList.add('early'); diff.textContent=fmtSec(st.remainingSec);
       $('caption').textContent=`定刻(${hhmm(st.stop)})まで発車しないで — あと ${fmtSec(st.remainingSec)}`;
     } else if(st.state==='ok'){
-      document.body.classList.add('state-ok');
-      $('stateTag').classList.add('ok'); $('stateTag').textContent='✅ 正常運行';
-      $('diff').classList.add('ok'); $('diff').textContent='+'+fmtSec(st.remainingSec);
+      const lc=lateClass(st.remainingSec);
+      if(lc==='o'){ document.body.classList.add('state-late-o'); tag.classList.add('late-o'); diff.classList.add('late-o'); tag.textContent='⚠ 大幅遅れ (発車可)'; }
+      else if(lc==='y'){ document.body.classList.add('state-late-y'); tag.classList.add('late-y'); diff.classList.add('late-y'); tag.textContent='遅れ (発車可)'; }
+      else { document.body.classList.add('state-ok'); tag.classList.add('ok'); diff.classList.add('ok'); tag.textContent='✅ 正常運行'; }
+      diff.textContent='+'+fmtSec(st.remainingSec);
       $('caption').textContent = st.remainingSec<-3 ? `定刻より ${fmtSec(st.remainingSec)} 遅れ(発車可)` : '定刻到達。発車OK';
-    } else {
-      $('stateTag').textContent='走行中'; $('diff').classList.add('appr');
-      const sign = st.remainingSec>=0?'':'−';
-      $('diff').textContent=(st.remainingSec>=0?'':'−')+fmtSec(st.remainingSec);
-      $('caption').textContent = st.remainingSec>=0
-        ? `次まで(到着後に早発判定) 定刻 ${hhmm(st.stop)}`
-        : `定刻を ${fmtSec(st.remainingSec)} 超過(遅れは問題なし)`;
+    } else { // approaching
+      if(st.remainingSec<0){
+        const lc=lateClass(st.remainingSec);
+        if(lc==='o'){ document.body.classList.add('state-late-o'); diff.classList.add('late-o'); }
+        else if(lc==='y'){ document.body.classList.add('state-late-y'); diff.classList.add('late-y'); }
+        else diff.classList.add('appr');
+        tag.textContent='走行中(遅れ)';
+        diff.textContent='−'+fmtSec(st.remainingSec);
+        $('caption').textContent=`定刻を ${fmtSec(st.remainingSec)} 超過(遅れは問題なし)`;
+      } else {
+        tag.classList.add('appr'); tag.textContent='走行中'; diff.classList.add('appr');
+        diff.textContent=fmtSec(st.remainingSec);
+        $('caption').textContent=`次まで(到着後に早発判定) 定刻 ${hhmm(st.stop)}`;
+      }
     }
     updateRail();
   }
@@ -363,8 +399,10 @@
   });
   $('simStop').addEventListener('input', ()=>{ targetIndex=+$('simStop').value; lastAtStopIndex=-1; runDemo(); });
   $('simOff').addEventListener('click', ()=>{
-    simOffset = simOffset===-30 ? 15 : (simOffset===15 ? -5 : -30);
-    $('simOff').textContent = simOffset<0 ? `早発${simOffset}s` : `遅れ+${simOffset}s`;
+    // 早発 → 正常 → 5.5分遅れ(黄) → 11分遅れ(橙) → 早発…
+    simOffset = simOffset===-30 ? 15 : (simOffset===15 ? 330 : (simOffset===330 ? 660 : -30));
+    $('simOff').textContent = simOffset<0 ? `早発${simOffset}s`
+      : (simOffset>=600 ? '遅れ+11分(橙)' : (simOffset>=300 ? '遅れ+5.5分(黄)' : `遅れ+${simOffset}s`));
     runDemo();
   });
   function runDemo(){
@@ -375,6 +413,16 @@
     lastAtStopIndex=targetIndex; // 半径内扱い
     render(evaluate(stop.lat, stop.lng, fakeNow));
   }
+
+  // ---- 判定半径スライダー(既定20m・localStorage保存) ----
+  (function initRadius(){
+    const r=$('radius'), v=$('radiusVal');
+    r.value=STOP_RADIUS_M; v.textContent=STOP_RADIUS_M+'m';
+    r.addEventListener('input', ()=>{
+      STOP_RADIUS_M=parseInt(r.value,10); v.textContent=STOP_RADIUS_M+'m'; lsSet('mon_radius',String(STOP_RADIUS_M));
+      if(mode==='demo') runDemo();
+    });
+  })();
 
   // ---- Service Worker ----
   if('serviceWorker' in navigator && location.protocol==='https:'){
