@@ -1,30 +1,30 @@
 <?php
 /*
  * m_busstop 読み取り専用 JSON API 【テンプレート】
- * しまバス乗務記録簿DB(Lolipop)のバス停座標を、GPS検証PWAへ配信する。
+ * しまバス乗務記録DB のバス停座標を、GPS検証PWA(運行支援アプリ)へ配信する。
+ * 仕様書「運行支援アプリ向けDB参照仕様」クエリA 相当。
  *
  * 【使い方】
- *   1. このファイルを busstops.php にコピー
- *   2. $DB_USER / $DB_PASS を実際の値に書き換える
- *   3. busstops.php を Lolipop のウェブスペースにアップロード
- *      （例: /bus-api/busstops.php → https://<あなたのドメイン>/bus-api/busstops.php）
- *   ※ busstops.php(パスワード入り)は .gitignore 済み。公開リポジトリには入りません。
+ *   1. このファイルを busstops.php にリネーム
+ *   2. 乗務記録アプリの api/ ディレクトリ(= config.php と同じ場所)に配置
+ *      → 接続情報は config.php を再利用するので、このファイルには書きません(安全)
+ *   3. URL 例: https://<あなたのドメイン>/<アプリパス>/api/busstops.php
+ *   4. GPS検証アプリ(gps_check.html)の「🌐同期」にこのURLを貼る
  *
- * 【安全】m_busstop の is_active=1・座標ありの行のみを返す読み取り専用。書き込み不可。
- *        DBパスワードはサーバ側のPHP内だけに存在し、ブラウザには送られません。
+ * 【安全】m_busstop の is_active=1・座標ありの行のみ返す読み取り専用(SELECT)。書き込み不可。
+ * 【前提】config.php が `return ['db' => ['host'=>,'dbname'=>,'user'=>,'pass'=>], ...];`
+ *        の形で db セクションを返すことを想定(仕様書の記載に準拠)。
+ *        もし定数定義/PDO/独自ヘルパ形式なら、下の接続部分だけ既存apiに合わせて調整。
  */
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');      // バス停座標は公開情報。読み取り専用のため * で許可
 header('Cache-Control: public, max-age=3600');  // 1時間キャッシュ可
 
-// ==== DB接続情報(★ユーザー名とパスワードをご自身で入力してください) ====
-$DB_HOST = 'mysql402.phy.lolipop.lan';
-$DB_NAME = 'LA11294846-busapp';
-$DB_USER = 'YOUR_DB_USER';   // ← 要入力
-$DB_PASS = 'YOUR_DB_PASS';   // ← 要入力(このファイルはサーバ内のみ。外部には出ません)
-
-$mysqli = @new mysqli($DB_HOST, $DB_USER, $DB_PASS, $DB_NAME);
+// ==== config.php を再利用してDB接続(接続情報はこのファイルに書かない) ====
+$config = require __DIR__ . '/config.php';
+$db = $config['db'];
+$mysqli = @new mysqli($db['host'], $db['user'], $db['pass'], $db['dbname']);
 if ($mysqli->connect_errno) {
     http_response_code(500);
     echo json_encode(['error' => 'DB接続に失敗しました'], JSON_UNESCAPED_UNICODE);
@@ -49,7 +49,7 @@ while ($row = $res->fetch_assoc()) {
     $stops[] = [
         'busstop_id'     => (int)$row['busstop_id'],
         'name'           => $row['name'],
-        'direction'      => (int)$row['direction'],
+        'direction'      => (int)$row['direction'],   // 1=上り 2=下り 9=その他
         'lat'            => (float)$row['latitude'],
         'lng'            => (float)$row['longitude'],
         'kana'           => $row['kana'],
