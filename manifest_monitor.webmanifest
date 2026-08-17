@@ -1,6 +1,6 @@
 {
-  "name": "早発モニター",
-  "short_name": "早発モニター",
+  "name": "しまバスドライバーズサポート",
+  "short_name": "ドラサポ",
   "description": "ダイヤ定刻と現在時刻の差を秒表示し、早発を防止する運行支援モニター",
   "start_url": "./bus_monitor.html",
   "scope": "./",
