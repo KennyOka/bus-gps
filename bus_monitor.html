@@ -19,10 +19,9 @@
     --sans:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans','Noto Sans JP',sans-serif;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-  html{height:100%;}
   html,body{margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans);}
-  /* iPhone Safariのツールバー分を差し引いた実表示高(dvh)にして上下切れを防ぐ */
-  body{display:flex; flex-direction:column; height:100vh; height:100dvh; overflow:hidden; transition:background .3s ease;
+  /* 自然フロー+ページスクロール。下部の副操作は画面外にはみ出してよい */
+  body{min-height:100dvh; transition:background .3s ease;
        padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom);}
   body.state-early{ animation:flashRed .9s infinite; }
   @keyframes flashRed{ 0%,100%{background:#3a0d0d;} 50%{background:#8f1d1d;} }
@@ -30,8 +29,8 @@
   body.state-late-y{ background:#2e2606; }
   body.state-late-o{ background:#331a06; }
 
-  .screen{ display:none; flex-direction:column; flex:1; min-height:0; }
-  .screen.active{ display:flex; }
+  .screen{ display:none; }
+  .screen.active{ display:block; }
 
   .topbar{ padding:12px 16px 10px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:baseline; }
   .title{ font-size:15px; font-weight:700; }
@@ -65,11 +64,11 @@
   .badge.pay{ background:#3a2d0d; color:var(--ok); }
 
   /* monitor */
-  .mon{ flex:1; display:flex; flex-direction:column; min-height:0; }
+  .mon{ display:block; }
   .mon-top{ padding:8px 16px; border-bottom:1px solid rgba(255,255,255,.08); display:flex; justify-content:space-between; align-items:center; gap:10px; }
   .mon-course{ font-size:18px; font-weight:800; line-height:1.15; }
-  .mon-sub{ font-size:11px; color:var(--ink-dim); margin-top:2px; }
-  .mon-zone{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; padding:8px 16px; text-align:center; overflow-y:auto; min-height:0; }
+  .mon-sub{ font-size:15px; font-weight:600; color:var(--ink-dim); margin-top:3px; }
+  .mon-zone{ display:flex; flex-direction:column; align-items:center; gap:3px; padding:10px 16px 6px; text-align:center; }
   .state-tag{ font-size:19px; font-weight:800; letter-spacing:.06em; padding:6px 18px; border-radius:20px; margin-bottom:6px; background:var(--panel-2); color:var(--ink-dim); border:1px solid var(--line); }
   .state-tag.early{ background:var(--early); color:#fff; border-color:var(--early); }
   .state-tag.ok{ background:var(--ok); color:#062f1c; border-color:var(--ok); }
@@ -84,8 +83,9 @@
   body.state-early .caption{ color:rgba(255,255,255,.9); }
   .next-prev{ margin-top:10px; font-size:26px; font-weight:700; color:var(--ink); }
   .target-card{ margin-top:12px; width:100%; max-width:460px; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.12); border-radius:14px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .tc-left{ flex:1; min-width:0; }
   .tc-lbl{ font-size:11px; color:var(--ink-dim); }
-  .target-name{ font-size:46px; font-weight:800; text-align:left; line-height:1.05; word-break:break-word; }
+  .target-name{ font-size:36px; font-weight:800; text-align:left; line-height:1.1; white-space:nowrap; overflow:hidden; }
   .target-dist{ font-size:15px; color:var(--ink-dim); margin-top:4px; text-align:left; }
   .target-eta{ text-align:right; flex-shrink:0; }
   .target-eta .t{ font-family:var(--mono); font-size:26px; font-weight:700; }
@@ -98,13 +98,15 @@
   .rail-txt{ font-size:11px; color:var(--ink-faint); padding:2px 16px 8px; }
   .gps-note{ font-size:11px; color:var(--ink-faint); text-align:center; padding:0 16px 6px; }
 
-  .controls{ border-top:1px solid var(--line); padding:12px 16px 8px; display:flex; gap:8px; flex-wrap:wrap; }
-  .controls button{ padding:13px 10px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:13px; font-weight:600; }
+  .controls{ display:flex; gap:8px; align-items:center; padding:10px 16px; }
+  .controls.primary{ border-top:1px solid var(--line); }
+  .controls button{ padding:14px 10px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:14px; font-weight:700; }
   .controls .grow{ flex:1; }
   .controls .adv{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
-  .radius-row{ display:flex; align-items:center; gap:12px; padding:8px 16px; }
-  .radius-row label{ font-size:13px; color:var(--ink-dim); white-space:nowrap; }
-  .radius-row select{ background:var(--panel); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:10px 12px; font-size:16px; font-family:var(--sans); }
+  .controls.secondary button{ font-size:12.5px; font-weight:600; padding:11px 12px; }
+  .radius-inline{ margin-left:auto; display:flex; align-items:center; gap:8px; }
+  .radius-inline span{ font-size:12px; color:var(--ink-dim); white-space:nowrap; }
+  .radius-inline select{ background:var(--panel); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:9px 10px; font-size:15px; font-family:var(--sans); }
   .sim{ display:flex; flex-direction:column; gap:8px; width:100%; padding:6px 16px 4px; }
   .sim-line{ display:flex; align-items:center; gap:10px; }
   .sim-line .sl{ font-size:12px; color:var(--ink-dim); white-space:nowrap; }
@@ -159,7 +161,7 @@
         <div class="diff appr" id="diff">--:--</div>
         <div class="caption" id="caption">GPSを開始してください</div>
         <div class="target-card">
-          <div><div class="tc-lbl">対象バス停</div><div class="target-name" id="targetName">—</div><div class="target-dist" id="targetDist"></div></div>
+          <div class="tc-left"><div class="tc-lbl">対象バス停</div><div class="target-name" id="targetName">—</div><div class="target-dist" id="targetDist"></div></div>
           <div class="target-eta"><div class="t" id="targetEta">--:--</div><div class="l">定刻</div></div>
         </div>
         <div class="next-prev" id="nextPrev"></div>
@@ -167,16 +169,15 @@
       <div class="rail" id="rail"></div>
       <div class="rail-txt" id="railTxt"></div>
       <div class="gps-note" id="gpsNote"></div>
-      <div class="controls">
-        <button id="monBack">≡ コース</button>
-        <button id="startBtn" class="grow adv">GPS開始</button>
+      <div class="controls primary">
         <button id="prevBtn">◀ 前停</button>
+        <button id="startBtn" class="grow adv">GPS開始</button>
         <button id="nextBtn">次停 ▶</button>
-        <button id="modeBtn">デモ</button>
       </div>
-      <div class="radius-row">
-        <label>判定半径</label>
-        <select id="radius"></select>
+      <div class="controls secondary">
+        <button id="monBack">≡ コース</button>
+        <button id="modeBtn">デモ</button>
+        <div class="radius-inline"><span>判定半径</span><select id="radius"></select></div>
       </div>
       <div class="sim" id="simRow" style="display:none;">
         <div class="sim-line">
@@ -330,6 +331,13 @@
   function advance(){ if(targetIndex<stops.length){ targetIndex++; lastAtStopIndex=-1; } }
 
   // ---- 描画 ----
+  // バス停名を一行に収める(長い名は自動縮小)
+  function setTargetName(name){
+    const el=$('targetName'); el.textContent=name||'';
+    el.style.fontSize='36px';
+    const avail=el.clientWidth;
+    if(avail>0 && el.scrollWidth>avail){ el.style.fontSize=Math.max(18, Math.floor(36*avail/el.scrollWidth))+'px'; }
+  }
   function resetMonUI(){
     clearStateClasses();
     $('stateTag').className='state-tag'; $('stateTag').textContent='運行前';
@@ -337,7 +345,7 @@
     $('caption').textContent='GPS開始 または デモで確認';
     $('nextPrev').textContent=''; $('targetDist').textContent='';
     terminalAnnounced=false; lastEarlyAnnounce=0;
-    if(stops[0]){ $('targetName').textContent=stops[0].name; $('targetEta').textContent=hhmm(stops[0]); }
+    if(stops[0]){ setTargetName(stops[0].name); $('targetEta').textContent=hhmm(stops[0]); }
     updateRail();
   }
   // 遅れの程度で色分け: 5分以上=黄, 10分以上=橙 (remainingSecは負=遅れ)
@@ -356,23 +364,23 @@
       tag.classList.add('ok'); tag.textContent='🏁 終点に到着';
       diff.classList.add('ok'); diff.textContent='🏁';
       $('caption').textContent='終点に到着しました。お疲れさまでした';
-      $('targetName').textContent=st.stop.name; $('targetEta').textContent=hhmm(st.stop); $('nextPrev').textContent='';
+      setTargetName(st.stop.name); $('targetEta').textContent=hhmm(st.stop); $('nextPrev').textContent='';
       if(!terminalAnnounced){ speak('終点に到着しました。お疲れさまでした'); terminalAnnounced=true; }
       updateRail(); return;
     }
     if(st.state==='finished'){
       tag.classList.add('appr'); tag.textContent='運行終了(全停通過)'; diff.classList.add('appr'); diff.textContent='--:--';
-      $('caption').textContent='お疲れさまでした'; $('targetName').textContent='—'; $('targetEta').textContent='--:--'; $('nextPrev').textContent=''; $('targetDist').textContent='';
+      $('caption').textContent='お疲れさまでした'; setTargetName('—'); $('targetEta').textContent='--:--'; $('nextPrev').textContent=''; $('targetDist').textContent='';
       updateRail(); return;
     }
-    $('targetName').textContent=st.stop.name;
+    setTargetName(st.stop.name);
     $('targetEta').textContent=hhmm(st.stop);
 
     if(st.state==='early'){
       document.body.classList.add('state-early');
       tag.classList.add('early'); tag.textContent='🚨 早発注意';
       diff.classList.add('early'); diff.textContent=fmtSec(st.remainingSec);
-      $('caption').textContent=`定刻(${hhmm(st.stop)})まで発車しないで — あと ${fmtSec(st.remainingSec)}`;
+      $('caption').textContent='';   // 冗長なメッセージは非表示(タグと大きな残り秒で十分)
       { const t=Date.now(); if(t-lastEarlyAnnounce>7000){ speak('早発です'); lastEarlyAnnounce=t; } }   // ⑧ 音声
     } else if(st.state==='ok'){
       const lc=lateClass(st.remainingSec);
@@ -428,7 +436,7 @@
   function refreshAfterNav(){
     if(mode==='demo') return runDemo();
     if(lastLat!=null) return update(lastLat,lastLng,new Date());
-    const s=stops[targetIndex]; if(s){ $('targetName').textContent=s.name; $('targetEta').textContent=hhmm(s); }
+    const s=stops[targetIndex]; if(s){ setTargetName(s.name); $('targetEta').textContent=hhmm(s); }
     const nxt=stops[targetIndex+1]; $('nextPrev').textContent = nxt?`この次 → ${nxt.name}（定刻 ${hhmm(nxt)}）`:'この次 → 終点';
     updateRail();
   }
