@@ -29,20 +29,25 @@
   body.state-late-y{ background:#2e2606; }
   body.state-late-o{ background:#331a06; }
 
-  /* オープニング(1.5秒) */
+  /* オープニング(タップでアニメ+音を同時再生) */
   #splash{ position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center;
     background:radial-gradient(circle at 50% 38%, #143a72, #0a1020 72%); overflow:hidden; }
   #splash.hide{ opacity:0; visibility:hidden; transition:opacity .5s ease, visibility .5s; }
-  #splash::before{ content:""; position:absolute; top:-60%; left:-30%; width:60%; height:220%;
+  #splash.play::before{ content:""; position:absolute; top:-60%; left:-30%; width:60%; height:220%;
     background:linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent); transform:rotate(18deg);
     animation:sweep 1.4s ease-in-out .3s; }
   @keyframes sweep{ 0%{ left:-40%; } 100%{ left:120%; } }
   .splash-inner{ text-align:center; }
-  .splash-logo{ font-size:76px; animation:logoIn 1s cubic-bezier(.2,1.4,.35,1) both; }
+  .splash-logo{ font-size:76px; opacity:0; }
   .splash-title{ font-size:46px; font-weight:900; letter-spacing:.1em; margin-top:4px;
-    background:linear-gradient(90deg,#fff,#8fd0ff,#fff); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:#fff;
-    animation:titleIn .8s .35s both; }
-  .splash-sub{ font-size:14px; color:#9fb6d8; margin-top:10px; letter-spacing:.14em; animation:titleIn .8s .6s both; }
+    background:linear-gradient(90deg,#fff,#8fd0ff,#fff); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:#fff; opacity:0; }
+  .splash-sub{ font-size:14px; color:#9fb6d8; margin-top:10px; letter-spacing:.14em; opacity:0; }
+  .splash-hint{ margin-top:28px; font-size:15px; color:#cfe0f5; letter-spacing:.06em; animation:hintPulse 1.2s ease-in-out infinite; }
+  #splash.play .splash-logo{ animation:logoIn 1s cubic-bezier(.2,1.4,.35,1) both; }
+  #splash.play .splash-title{ animation:titleIn .8s .35s both; }
+  #splash.play .splash-sub{ animation:titleIn .8s .6s both; }
+  #splash.play .splash-hint{ display:none; }
+  @keyframes hintPulse{ 0%,100%{ opacity:.4; } 50%{ opacity:1; } }
   @keyframes logoIn{ 0%{ transform:scale(.2) rotate(-25deg); opacity:0; } 100%{ transform:scale(1) rotate(0); opacity:1; } }
   @keyframes titleIn{ 0%{ transform:translateY(14px); opacity:0; } 100%{ transform:translateY(0); opacity:1; } }
 
@@ -138,6 +143,7 @@
     <div class="splash-logo">🚌</div>
     <div class="splash-title">ドラサポ</div>
     <div class="splash-sub">しまバス ドライバーズサポート</div>
+    <div class="splash-hint" id="splashHint">画面をタップしてスタート</div>
   </div></div>
 
   <!-- ===== 画面1: 設定 ===== -->
@@ -558,43 +564,50 @@
     });
   })();
 
-  // ---- ⑨ オープニング: オリジナルの勇壮なファンファーレを鳴らし、その長さだけ表示 ----
-  function playOpeningFanfare(){
+  // ---- ⑨ オープニング: タップでアニメ+ファンファーレを同時再生(iOSの自動再生制限に対応) ----
+  function scheduleFanfare(ctx){
     try{
-      const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return 2700;
-      const ctx=new AC(); let played=false;
-      const schedule=()=>{
-        if(played) return; played=true;
-        const master=ctx.createGain(); master.gain.value=0.32; master.connect(ctx.destination);
-        const note=(f,s,d,v)=>{
-          const o=ctx.createOscillator(), o2=ctx.createOscillator(), g=ctx.createGain();
-          o.type='sawtooth'; o2.type='square'; o.frequency.value=f; o2.frequency.value=f; o2.detune.value=7;
-          g.gain.setValueAtTime(0.0001,s); g.gain.exponentialRampToValueAtTime(v,s+0.03);
-          g.gain.exponentialRampToValueAtTime(0.0001,s+d);
-          o.connect(g); o2.connect(g); g.connect(master);
-          o.start(s); o2.start(s); o.stop(s+d+0.05); o2.stop(s+d+0.05);
-        };
-        const C5=523.25,G4=392,E5=659.25,G5=784,C6=1046.5;
-        let t=ctx.currentTime+0.06;
-        note(C5,t,0.16,0.45); t+=0.17;
-        note(G4,t,0.12,0.40); t+=0.14;
-        note(C5,t,0.12,0.45); t+=0.16;
-        note(E5,t,0.20,0.50); t+=0.22;
-        note(G5,t,0.50,0.55); t+=0.55;
-        note(C5,t,1.1,0.30); note(E5,t,1.1,0.32); note(G5,t,1.1,0.36); note(C6,t,1.1,0.30);
+      const master=ctx.createGain(); master.gain.value=0.32; master.connect(ctx.destination);
+      const note=(f,s,d,v)=>{
+        const o=ctx.createOscillator(), o2=ctx.createOscillator(), g=ctx.createGain();
+        o.type='sawtooth'; o2.type='square'; o.frequency.value=f; o2.frequency.value=f; o2.detune.value=7;
+        g.gain.setValueAtTime(0.0001,s); g.gain.exponentialRampToValueAtTime(v,s+0.03);
+        g.gain.exponentialRampToValueAtTime(0.0001,s+d);
+        o.connect(g); o2.connect(g); g.connect(master);
+        o.start(s); o2.start(s); o.stop(s+d+0.05); o2.stop(s+d+0.05);
       };
-      if(ctx.state==='suspended'){
-        ctx.resume().then(schedule).catch(()=>{});
-        const once=()=>{ ctx.resume().then(schedule).catch(()=>{}); };   // iOS: 初回タップで再生
-        window.addEventListener('pointerdown',once,{once:true});
-        window.addEventListener('touchend',once,{once:true});
-      } else schedule();
-      return 2700;  // 音源の長さ(ms)=表示時間
-    }catch(e){ return 2600; }
+      const C5=523.25,G4=392,E5=659.25,G5=784,C6=1046.5;
+      let t=ctx.currentTime+0.05;
+      note(C5,t,0.16,0.45); t+=0.17;
+      note(G4,t,0.12,0.40); t+=0.14;
+      note(C5,t,0.12,0.45); t+=0.16;
+      note(E5,t,0.20,0.50); t+=0.22;
+      note(G5,t,0.50,0.55); t+=0.55;
+      note(C5,t,1.1,0.30); note(E5,t,1.1,0.32); note(G5,t,1.1,0.36); note(C6,t,1.1,0.30);
+      return 2700;  // 音源の長さ(ms)
+    }catch(e){ return 2700; }
   }
   (function opening(){
-    const ms = playOpeningFanfare() || 2600;
-    setTimeout(()=>{ const s=$('splash'); if(s){ s.classList.add('hide'); setTimeout(()=>{ if(s.parentNode) s.remove(); }, 600); } }, ms);
+    const splash=$('splash'); if(!splash) return;
+    const hint=$('splashHint');
+    let ctx=null; try{ const AC=window.AudioContext||window.webkitAudioContext; if(AC) ctx=new AC(); }catch(e){}
+    let started=false;
+    function hideSplash(){ splash.classList.add('hide'); setTimeout(()=>{ if(splash.parentNode) splash.remove(); }, 600); }
+    function go(){
+      if(started) return; started=true;
+      if(hint) hint.style.display='none';
+      splash.classList.add('play');                                  // アニメ開始
+      const play=()=>{ const ms=(ctx?scheduleFanfare(ctx):2700)||2700; setTimeout(hideSplash, Math.max(2200, ms)); };  // 音と同時
+      if(ctx && ctx.state==='suspended'){ ctx.resume().then(play).catch(()=>{ setTimeout(hideSplash,2700); }); }
+      else if(ctx){ play(); }
+      else { setTimeout(hideSplash,2700); }
+    }
+    if(ctx && ctx.state==='running'){ go(); }                        // 自動再生可(PC/Android)は即
+    else {                                                           // iOS等はタップ待ち
+      const once=()=>{ go(); document.removeEventListener('pointerdown',once); document.removeEventListener('touchend',once); };
+      document.addEventListener('pointerdown',once);
+      document.addEventListener('touchend',once);
+    }
   })();
 
   // ---- Service Worker ----
