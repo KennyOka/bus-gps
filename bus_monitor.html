@@ -596,17 +596,19 @@
     function go(){
       if(started) return; started=true;
       if(hint) hint.style.display='none';
-      splash.classList.add('play');                                  // アニメ開始
-      const play=()=>{ const ms=(ctx?scheduleFanfare(ctx):2700)||2700; setTimeout(hideSplash, Math.max(2200, ms)); };  // 音と同時
-      if(ctx && ctx.state==='suspended'){ ctx.resume().then(play).catch(()=>{ setTimeout(hideSplash,2700); }); }
-      else if(ctx){ play(); }
-      else { setTimeout(hideSplash,2700); }
+      splash.classList.add('play');            // アニメ開始
+      setTimeout(hideSplash, 2700);            // 遷移は音に依存せず必ず実行
+      try{                                     // 音は別処理(失敗しても遷移は進む)
+        if(ctx){
+          const fire=()=>{ try{ scheduleFanfare(ctx); }catch(e){} };
+          if(ctx.state==='suspended') ctx.resume().then(fire).catch(()=>{}); else fire();
+        }
+      }catch(e){}
     }
-    if(ctx && ctx.state==='running'){ go(); }                        // 自動再生可(PC/Android)は即
-    else {                                                           // iOS等はタップ待ち
-      const once=()=>{ go(); document.removeEventListener('pointerdown',once); document.removeEventListener('touchend',once); };
-      document.addEventListener('pointerdown',once);
-      document.addEventListener('touchend',once);
+    if(ctx && ctx.state==='running'){ go(); }  // 自動再生可(PC/Android)は即
+    else {                                     // iOS等はタップ待ち(複数イベントで確実に検知)
+      ['pointerdown','touchstart','click'].forEach(ev=>{ splash.addEventListener(ev, go); document.addEventListener(ev, go); });
+      setTimeout(go, 10000);                   // 保険: 無操作でも10秒で必ず進む
     }
   })();
 
