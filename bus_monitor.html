@@ -98,7 +98,7 @@
   .diff.late-y{ color:var(--late-y); } .diff.late-o{ color:var(--late-o); }
   .caption{ margin-top:12px; font-size:16px; color:var(--ink-dim); }
   body.state-early .caption{ color:rgba(255,255,255,.9); }
-  .next-prev{ margin-top:10px; font-size:26px; font-weight:700; color:var(--ink); }
+  .next-prev{ margin-top:10px; font-size:26px; font-weight:700; color:var(--ink); max-width:100%; white-space:nowrap; overflow:hidden; }
   .target-card{ margin-top:12px; width:100%; max-width:460px; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.12); border-radius:14px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
   .tc-left{ flex:1; min-width:0; }
   .tc-lbl{ font-size:11px; color:var(--ink-dim); }
@@ -393,6 +393,11 @@
       t.style.removeProperty('--shift'); t.style.removeProperty('--dur');
     }
   }
+  // 「この次 →」行: 1行固定・長い時は自動縮小
+  function setNextPrev(text){
+    const el=$('nextPrev'); el.textContent=text||''; el.style.fontSize='26px';
+    if(text){ const w=el.clientWidth; if(w>0 && el.scrollWidth>w){ el.style.fontSize=Math.max(13, Math.floor(26*w/el.scrollWidth))+'px'; } }
+  }
   function resetMonUI(){
     clearStateClasses();
     $('stateTag').className='state-tag'; $('stateTag').textContent='運行前';
@@ -412,7 +417,7 @@
     tag.className='state-tag'; diff.className='diff';
     $('targetDist').textContent = (st.d!=null && isFinite(st.d)) ? `現在地から 約 ${Math.round(st.d)} m` : '';   // ② 距離
     const nxt = st.state!=='finished' ? stops[targetIndex+1] : null;
-    $('nextPrev').textContent = st.state==='finished' ? '' : (nxt ? `この次 → ${nxt.name}（定刻 ${hhmm(nxt)}）` : 'この次 → 終点');
+    setNextPrev(st.state==='finished' ? '' : (nxt ? `この次 → ${nxt.name}（定刻 ${hhmm(nxt)}）` : 'この次 → 終点'));
 
     if(st.state==='terminal'){   // ⑦ 終点到着(早発判定しない)
       document.body.classList.add('state-ok');
@@ -498,7 +503,7 @@
     if(mode==='demo') return runDemo();
     if(lastLat!=null) return update(lastLat,lastLng,new Date());
     const s=stops[targetIndex]; if(s){ setTargetName(s.name); $('targetEta').textContent=hhmm(s); }
-    const nxt=stops[targetIndex+1]; $('nextPrev').textContent = nxt?`この次 → ${nxt.name}（定刻 ${hhmm(nxt)}）`:'この次 → 終点';
+    const nxt=stops[targetIndex+1]; setNextPrev(nxt?`この次 → ${nxt.name}（定刻 ${hhmm(nxt)}）`:'この次 → 終点');
     updateRail();
   }
   $('prevBtn').addEventListener('click', ()=>{ if(targetIndex>0){ targetIndex--; lastAtStopIndex=-1; terminalAnnounced=false; refreshAfterNav(); } });
