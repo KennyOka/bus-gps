@@ -425,7 +425,7 @@
       diff.classList.add('ok'); diff.textContent='🏁';
       $('caption').textContent='終点に到着しました。お疲れさまでした';
       setTargetName(st.stop.name); $('targetEta').textContent=hhmm(st.stop); $('nextPrev').textContent='';
-      if(!terminalAnnounced){ speak('終点に到着しました。お疲れさまでした'); terminalAnnounced=true; }
+      if(!terminalAnnounced){ speak('終点に到着しました。お疲れさまでした'); terminalAnnounced=true; stopGps(); }   // 終点でGPS停止
       updateRail(); return;
     }
     if(st.state==='finished'){
@@ -493,7 +493,7 @@
   $('startBtn').addEventListener('click', ()=>{
     primeAudio();
     if(mode==='gps'){
-      if(watchId===null){ speak('ドラサポを開始します。全集中で、ご安全に！'); startGps(); }   // ⑤ 開始アナウンス
+      if(watchId===null){ speak('ドラサポを開始します。ぜんしゅうちゅうで、ご安全に！'); startGps(); }   // ⑤ 開始アナウンス
       else stopGps();
     } else { runDemo(); }
   });
