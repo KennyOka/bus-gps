@@ -29,6 +29,23 @@
   body.state-late-y{ background:#2e2606; }
   body.state-late-o{ background:#331a06; }
 
+  /* オープニング(1.5秒) */
+  #splash{ position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 50% 38%, #143a72, #0a1020 72%); overflow:hidden; }
+  #splash.hide{ opacity:0; visibility:hidden; transition:opacity .5s ease, visibility .5s; }
+  #splash::before{ content:""; position:absolute; top:-60%; left:-30%; width:60%; height:220%;
+    background:linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent); transform:rotate(18deg);
+    animation:sweep 1.4s ease-in-out .3s; }
+  @keyframes sweep{ 0%{ left:-40%; } 100%{ left:120%; } }
+  .splash-inner{ text-align:center; }
+  .splash-logo{ font-size:76px; animation:logoIn 1s cubic-bezier(.2,1.4,.35,1) both; }
+  .splash-title{ font-size:46px; font-weight:900; letter-spacing:.1em; margin-top:4px;
+    background:linear-gradient(90deg,#fff,#8fd0ff,#fff); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:#fff;
+    animation:titleIn .8s .35s both; }
+  .splash-sub{ font-size:14px; color:#9fb6d8; margin-top:10px; letter-spacing:.14em; animation:titleIn .8s .6s both; }
+  @keyframes logoIn{ 0%{ transform:scale(.2) rotate(-25deg); opacity:0; } 100%{ transform:scale(1) rotate(0); opacity:1; } }
+  @keyframes titleIn{ 0%{ transform:translateY(14px); opacity:0; } 100%{ transform:translateY(0); opacity:1; } }
+
   .screen{ display:none; }
   .screen.active{ display:block; }
 
@@ -85,10 +102,13 @@
   .target-card{ margin-top:12px; width:100%; max-width:460px; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.12); border-radius:14px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
   .tc-left{ flex:1; min-width:0; }
   .tc-lbl{ font-size:11px; color:var(--ink-dim); }
-  .target-name{ font-size:36px; font-weight:800; text-align:left; line-height:1.1; white-space:nowrap; overflow:hidden; }
+  .target-name{ width:4.4em; font-size:44px; font-weight:800; line-height:1.1; white-space:nowrap; overflow:hidden; }
+  .tn-text{ display:inline-block; will-change:transform; }
+  .tn-text.scroll{ animation: tnMarquee var(--dur,5s) linear infinite alternate; }
+  @keyframes tnMarquee{ from{ transform:translateX(0); } to{ transform:translateX(var(--shift,0)); } }
   .target-dist{ font-size:15px; color:var(--ink-dim); margin-top:4px; text-align:left; }
   .target-eta{ text-align:right; flex-shrink:0; }
-  .target-eta .t{ font-family:var(--mono); font-size:26px; font-weight:700; }
+  .target-eta .t{ font-family:var(--mono); font-size:26px; font-weight:700; white-space:nowrap; }
   .target-eta .l{ font-size:10px; color:var(--ink-dim); }
 
   .rail{ display:flex; gap:3px; padding:6px 16px 2px; flex-wrap:wrap; }
@@ -98,15 +118,12 @@
   .rail-txt{ font-size:11px; color:var(--ink-faint); padding:2px 16px 8px; }
   .gps-note{ font-size:11px; color:var(--ink-faint); text-align:center; padding:0 16px 6px; }
 
-  .controls{ display:flex; gap:8px; align-items:center; padding:10px 16px; }
+  .controls{ display:flex; gap:6px; align-items:stretch; padding:10px 12px; }
   .controls.primary{ border-top:1px solid var(--line); }
-  .controls button{ padding:14px 10px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:14px; font-weight:700; }
-  .controls .grow{ flex:1; }
+  .controls button{ flex:1; padding:14px 6px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:14px; font-weight:700; white-space:nowrap; }
   .controls .adv{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
-  .controls.secondary button{ font-size:12.5px; font-weight:600; padding:11px 12px; }
-  .radius-inline{ margin-left:auto; display:flex; align-items:center; gap:8px; }
-  .radius-inline span{ font-size:12px; color:var(--ink-dim); white-space:nowrap; }
-  .radius-inline select{ background:var(--panel); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:9px 10px; font-size:15px; font-family:var(--sans); }
+  .controls.secondary button{ font-size:13px; font-weight:600; padding:12px 6px; }
+  .radius-sel{ flex:1; background:var(--panel); border:1px solid var(--line); color:var(--ink); border-radius:10px; padding:12px 6px; font-size:14px; font-family:var(--sans); text-align:center; }
   .sim{ display:flex; flex-direction:column; gap:8px; width:100%; padding:6px 16px 4px; }
   .sim-line{ display:flex; align-items:center; gap:10px; }
   .sim-line .sl{ font-size:12px; color:var(--ink-dim); white-space:nowrap; }
@@ -115,6 +132,13 @@
 </style>
 </head>
 <body>
+
+  <!-- オープニング(⑨) -->
+  <div id="splash"><div class="splash-inner">
+    <div class="splash-logo">🚌</div>
+    <div class="splash-title">ドラサポ</div>
+    <div class="splash-sub">しまバス ドライバーズサポート</div>
+  </div></div>
 
   <!-- ===== 画面1: 設定 ===== -->
   <div class="screen active" id="scSetup">
@@ -161,7 +185,7 @@
         <div class="diff appr" id="diff">--:--</div>
         <div class="caption" id="caption">GPSを開始してください</div>
         <div class="target-card">
-          <div class="tc-left"><div class="tc-lbl">対象バス停</div><div class="target-name" id="targetName">—</div><div class="target-dist" id="targetDist"></div></div>
+          <div class="tc-left"><div class="tc-lbl">対象バス停</div><div class="target-name" id="targetName"><span class="tn-text" id="tnText">—</span></div><div class="target-dist" id="targetDist"></div></div>
           <div class="target-eta"><div class="t" id="targetEta">--:--</div><div class="l">定刻</div></div>
         </div>
         <div class="next-prev" id="nextPrev"></div>
@@ -170,14 +194,16 @@
       <div class="rail-txt" id="railTxt"></div>
       <div class="gps-note" id="gpsNote"></div>
       <div class="controls primary">
-        <button id="prevBtn">◀ 前停</button>
-        <button id="startBtn" class="grow adv">GPS開始</button>
-        <button id="nextBtn">次停 ▶</button>
+        <button id="monBack">コース</button>
+        <button id="startBtn" class="grow adv">開始</button>
+        <button id="prevBtn">◀前停</button>
+        <button id="nextBtn">次停▶</button>
       </div>
       <div class="controls secondary">
-        <button id="monBack">≡ コース</button>
         <button id="modeBtn">デモ</button>
-        <div class="radius-inline"><span>判定半径</span><select id="radius"></select></div>
+        <select id="radius" class="radius-sel"></select>
+        <button id="audioBtn">🔊音ON</button>
+        <button id="voiceBtn">女声</button>
       </div>
       <div class="sim" id="simRow" style="display:none;">
         <div class="sim-line">
@@ -209,10 +235,22 @@
   let simOffset = -30;    // デモ時の秒オフセット(-30早発/+15遅れ 等)
   let lastLat=null, lastLng=null;
   let audioPrimed=false, lastEarlyAnnounce=0, terminalAnnounced=false;
+  let audioOn = (lsGet('mon_audio')!=='off');                        // ⑦ 既定ON
+  let voiceGender = (lsGet('mon_voice')==='male' ? 'male':'female'); // ⑥
+  let jaVoices = [];
 
-  // ---- 音声通知(iOS Safari: ユーザー操作でunlock) ----
+  // ---- 音声(iOS Safari: ユーザー操作でunlock。声色/ON-OFF対応) ----
+  function loadVoices(){ try{ jaVoices = window.speechSynthesis.getVoices().filter(v=>/ja|JP/i.test(v.lang)); }catch(e){} }
+  function pickVoice(){
+    if(!jaVoices.length) loadVoices();
+    if(!jaVoices.length) return null;
+    const male = jaVoices.find(v=>/otoya|hattori|ichiro|male|男/i.test(v.name));
+    const female = jaVoices.find(v=>/kyoko|o-?ren|female|女/i.test(v.name));
+    return voiceGender==='male' ? (male||jaVoices[0]) : (female || jaVoices.find(v=>v!==male) || jaVoices[0]);
+  }
   function primeAudio(){ if(audioPrimed) return; try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; window.speechSynthesis.speak(u); audioPrimed=true; }catch(e){} }
-  function speak(text){ try{ window.speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.lang='ja-JP'; u.rate=1.0; window.speechSynthesis.speak(u); }catch(e){} }
+  function speak(text){ if(!audioOn) return; try{ window.speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.lang='ja-JP'; const v=pickVoice(); if(v) u.voice=v; u.rate=1.0; window.speechSynthesis.speak(u); }catch(e){} }
+  try{ window.speechSynthesis.onvoiceschanged=loadVoices; loadVoices(); }catch(e){}
 
   const $ = id => document.getElementById(id);
 
@@ -319,11 +357,16 @@
     if(d<=STOP_RADIUS_M){
       lastAtStopIndex=targetIndex;
       if(isLast) return { state:'terminal', stop, remainingSec, d };   // 終点は早発判定せず到着扱い
+      if(targetIndex===0 && remainingSec>0) return { state:'waiting', stop, remainingSec, d };  // ⑤ 始発
       return { state: remainingSec>0?'early':'ok', stop, remainingSec, d };
     } else {
       if(lastAtStopIndex===targetIndex){
         if(isLast) return { state:'terminal', stop, remainingSec, d };  // 終点からは進めない
-        advance(); if(targetIndex>=stops.length) return {state:'finished'}; return evaluate(lat,lng,now);
+        const nextStop = stops[targetIndex+1];   // ⑧ 発車=半径を外れた → 次を案内
+        advance();
+        if(nextStop) speak(`次は、${nextStop.name}です`);
+        if(targetIndex>=stops.length) return {state:'finished'};
+        return evaluate(lat,lng,now);
       }
       return { state:'approaching', stop, remainingSec, d };
     }
@@ -331,12 +374,24 @@
   function advance(){ if(targetIndex<stops.length){ targetIndex++; lastAtStopIndex=-1; } }
 
   // ---- 描画 ----
-  // バス停名を一行に収める(長い名は自動縮小)
+  // ① バス停名: 4文字幅の枠に固定、長い名はCSSアニメで横スクロール(往復)
+  let curTargetName=null;
   function setTargetName(name){
-    const el=$('targetName'); el.textContent=name||'';
-    el.style.fontSize='36px';
-    const avail=el.clientWidth;
-    if(avail>0 && el.scrollWidth>avail){ el.style.fontSize=Math.max(18, Math.floor(36*avail/el.scrollWidth))+'px'; }
+    name=name||'';
+    if(name===curTargetName) return;   // 同名は継続(再スタートしない)
+    curTargetName=name;
+    const box=$('targetName'), t=$('tnText');
+    t.classList.remove('scroll'); t.textContent=name;   // リセット
+    const over = t.scrollWidth - box.clientWidth;        // 同期測定(rAF不要)
+    if(over>2){
+      const dur=Math.max(3, over/28);
+      t.style.setProperty('--shift', (-over)+'px');
+      t.style.setProperty('--dur', dur+'s');
+      void t.offsetWidth;                                // reflowでアニメ再適用
+      t.classList.add('scroll');
+    } else {
+      t.style.removeProperty('--shift'); t.style.removeProperty('--dur');
+    }
   }
   function resetMonUI(){
     clearStateClasses();
@@ -344,7 +399,7 @@
     $('diff').className='diff appr'; $('diff').textContent='--:--';
     $('caption').textContent='GPS開始 または デモで確認';
     $('nextPrev').textContent=''; $('targetDist').textContent='';
-    terminalAnnounced=false; lastEarlyAnnounce=0;
+    terminalAnnounced=false; lastEarlyAnnounce=0; curTargetName=null;
     if(stops[0]){ setTargetName(stops[0].name); $('targetEta').textContent=hhmm(stops[0]); }
     updateRail();
   }
@@ -384,11 +439,15 @@
       { const t=Date.now(); if(t-lastEarlyAnnounce>7000){ speak('早発です'); lastEarlyAnnounce=t; } }   // ⑧ 音声
     } else if(st.state==='ok'){
       const lc=lateClass(st.remainingSec);
-      if(lc==='o'){ document.body.classList.add('state-late-o'); tag.classList.add('late-o'); diff.classList.add('late-o'); tag.textContent='⚠ 大幅遅れ (発車可)'; }
-      else if(lc==='y'){ document.body.classList.add('state-late-y'); tag.classList.add('late-y'); diff.classList.add('late-y'); tag.textContent='遅れ (発車可)'; }
+      if(lc==='o'){ document.body.classList.add('state-late-o'); tag.classList.add('late-o'); diff.classList.add('late-o'); tag.textContent='⚠ 大幅遅れ'; }
+      else if(lc==='y'){ document.body.classList.add('state-late-y'); tag.classList.add('late-y'); diff.classList.add('late-y'); tag.textContent='遅れ'; }
       else { document.body.classList.add('state-ok'); tag.classList.add('ok'); diff.classList.add('ok'); tag.textContent='✅ 正常運行'; }
       diff.textContent='+'+fmtSec(st.remainingSec);
-      $('caption').textContent = st.remainingSec<-3 ? `定刻より ${fmtSec(st.remainingSec)} 遅れ(発車可)` : '定刻到達。発車OK';
+      $('caption').textContent = st.remainingSec<-3 ? `定刻より ${fmtSec(st.remainingSec)} 遅れ` : '定刻到達';
+    } else if(st.state==='waiting'){   // ⑤ 始発地は早発警告しない
+      tag.classList.add('appr'); tag.textContent='🚏 始発 待機';
+      diff.classList.add('appr'); diff.textContent=fmtSec(st.remainingSec);
+      $('caption').textContent=`定刻(${hhmm(st.stop)})まで待機`;
     } else { // approaching
       if(st.remainingSec<0){
         const lc=lateClass(st.remainingSec);
@@ -423,13 +482,15 @@
       p=>{ lastLat=p.coords.latitude; lastLng=p.coords.longitude; $('gpsNote').textContent=`精度±${Math.round(p.coords.accuracy)}m`; update(lastLat,lastLng,new Date()); },
       e=>{ $('gpsNote').textContent='位置情報エラー: '+e.message; },
       { enableHighAccuracy:true, maximumAge:1000, timeout:15000 });
-    $('startBtn').textContent='GPS停止';
+    $('startBtn').textContent='停止';
   }
-  function stopGps(){ if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null; } $('startBtn').textContent='GPS開始'; }
+  function stopGps(){ if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null; } $('startBtn').textContent='開始'; }
   $('startBtn').addEventListener('click', ()=>{
     primeAudio();
-    if(mode==='gps'){ watchId===null?startGps():stopGps(); }
-    else { runDemo(); }
+    if(mode==='gps'){
+      if(watchId===null){ speak('ドラサポを開始します。全集中で、ご安全に！'); startGps(); }   // ⑤ 開始アナウンス
+      else stopGps();
+    } else { runDemo(); }
   });
 
   // ---- 手動で対象バス停を前/次へ(⑥) ----
@@ -450,7 +511,7 @@
     $('modeBtn').textContent = mode==='demo' ? '実GPS' : 'デモ';
     $('simRow').style.display = mode==='demo' ? 'flex' : 'none';
     if(mode==='demo'){ stopGps(); $('startBtn').textContent='デモ反映'; runDemo(); }
-    else { $('startBtn').textContent='GPS開始'; }
+    else { $('startBtn').textContent='開始'; }
   });
   $('simStop').addEventListener('input', ()=>{ targetIndex=+$('simStop').value; lastAtStopIndex=-1; runDemo(); });
   $('simOff').addEventListener('click', ()=>{
@@ -469,6 +530,19 @@
     render(evaluate(stop.lat, stop.lng, fakeNow));
   }
 
+  // ---- 音声ON/OFF(⑦)・声色(⑥) ----
+  function updateAudioBtn(){ $('audioBtn').textContent = audioOn ? '🔊音ON' : '🔇音OFF'; }
+  function updateVoiceBtn(){ $('voiceBtn').textContent = voiceGender==='male' ? '男声' : '女声'; }
+  $('audioBtn').addEventListener('click', ()=>{
+    audioOn=!audioOn; lsSet('mon_audio', audioOn?'on':'off'); updateAudioBtn();
+    if(audioOn){ primeAudio(); speak('音声オン'); } else { try{ window.speechSynthesis.cancel(); }catch(e){} }
+  });
+  $('voiceBtn').addEventListener('click', ()=>{
+    voiceGender = voiceGender==='male' ? 'female':'male'; lsSet('mon_voice', voiceGender); updateVoiceBtn();
+    primeAudio(); speak('この声で案内します');
+  });
+  updateAudioBtn(); updateVoiceBtn();
+
   // ---- 判定半径プルダウン(5m刻み・既定20m・localStorage保存) ----
   (function initRadius(){
     const r=$('radius');
@@ -478,6 +552,9 @@
       if(mode==='demo') runDemo();
     });
   })();
+
+  // ---- ⑨ オープニングを1.5秒で閉じる ----
+  setTimeout(()=>{ const s=$('splash'); if(s){ s.classList.add('hide'); setTimeout(()=>{ if(s.parentNode) s.remove(); }, 600); } }, 1500);
 
   // ---- Service Worker ----
   if('serviceWorker' in navigator && location.protocol==='https:'){
