@@ -377,7 +377,7 @@
       if(!j || j.error){ alert('停留所データ取得エラー: '+((j&&j.error)||'不明')); return; }
       if(!j.stops || !j.stops.length){ alert('このコースには停留所データがありません(count=0)'); return; }
       stops=j.stops;
-      targetIndex=0; lastAtStopIndex=-1;
+      targetIndex=0; lastAtStopIndex=-1; corrections={};   // 新コースは補正をリセット
       $('monCourse').textContent=`${c.start_place} → ${c.end_place}`;
       $('monSub').textContent=`${c.departure_time}発 ・ タッチ ${c.touch_no||'—'}${c.digital_no?' ・ デジタル'+c.digital_no:''}`;
       buildRail();
@@ -566,18 +566,26 @@
       else stopRun();                          // ⑫ 停止時に補正をDBへ
     } else { runDemo(); }
   });
-  // ⑫ 補正: 現在地を対象バス停の新座標として一時取得(停止時にまとめて保存)
+  // ⑫ 補正: 現在地を対象バス停の新座標として一時取得。補正済みの停で再度押すと取消
+  function refreshDisp(stop){ if(mode==='demo') runDemo(); else if(lastLat!=null) update(lastLat,lastLng,new Date()); else setTargetName(dispName(stop)); updateRail(); }
   $('correctBtn').addEventListener('click', ()=>{
     const stop=stops[targetIndex]; if(!stop){ toast('対象バス停がありません'); return; }
+    const cur=corrections[stop.busstop_id];
+    if(cur){   // 補正済み → 取消(元の座標に戻す)
+      if(confirm(`「${stop.name}」の補正を取り消しますか？`)){
+        stop.lat=cur.origLat; stop.lng=cur.origLng; delete corrections[stop.busstop_id];
+        toast(`「${stop.name}」の補正を取り消しました`); refreshDisp(stop);
+      }
+      return;
+    }
     if(!navigator.geolocation){ toast('この端末はGPS非対応'); return; }
     toast('現在地を取得中…');
     navigator.geolocation.getCurrentPosition(p=>{
       const lat=p.coords.latitude, lng=p.coords.longitude;
-      corrections[stop.busstop_id]={lat,lng};
-      stop.lat=lat; stop.lng=lng;                    // その場の判定にも反映
-      toast(`「${stop.name}」を補正(±${Math.round(p.coords.accuracy)}m)・停止時に保存`);
-      if(mode==='demo') runDemo(); else if(lastLat!=null) update(lastLat,lastLng,new Date()); else setTargetName(dispName(stop));
-      updateRail();
+      corrections[stop.busstop_id]={lat,lng, origLat:stop.lat, origLng:stop.lng};   // 元座標も保持
+      stop.lat=lat; stop.lng=lng;
+      toast(`「${stop.name}」を補正(±${Math.round(p.coords.accuracy)}m)・停止時に保存(もう一度押すと取消)`);
+      refreshDisp(stop);
     }, e=> toast('現在地取得に失敗: '+e.message), {enableHighAccuracy:true, timeout:15000, maximumAge:0});
   });
 
