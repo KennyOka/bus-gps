@@ -32,7 +32,7 @@ if ($dia_course_id <= 0) {
 }
 
 // ==== クエリC(プレースホルダで安全に) ====
-$sql = "SELECT cs.seq, b.busstop_id, b.name, b.direction, b.latitude, b.longitude,
+$sql = "SELECT cs.seq, b.busstop_id, b.name, b.kana, b.direction, b.latitude, b.longitude,
                TIME_FORMAT(cs.scheduled_time, '%H:%i:%s') AS scheduled_time
         FROM m_dia_course_stop cs
         JOIN m_busstop b ON b.busstop_id = cs.busstop_id
@@ -50,6 +50,7 @@ while ($row = $res->fetch_assoc()) {
         'seq'            => (int)$row['seq'],
         'busstop_id'     => (int)$row['busstop_id'],
         'name'           => $row['name'],
+        'kana'           => $row['kana'],
         'direction'      => (int)$row['direction'],
         'lat'            => isset($row['latitude'])  ? (float)$row['latitude']  : null,   // 座標NULLあり
         'lng'            => isset($row['longitude']) ? (float)$row['longitude'] : null,

@@ -19,7 +19,7 @@
     --sans:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans','Noto Sans JP',sans-serif;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-  html,body{margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans);}
+  html,body{margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); overscroll-behavior-y:none;}
   /* 自然フロー+ページスクロール。下部の副操作は画面外にはみ出してよい */
   body{min-height:100dvh; transition:background .3s ease;
        padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom);}
@@ -43,6 +43,7 @@
     background:linear-gradient(90deg,#fff,#8fd0ff,#fff); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:#fff; opacity:0; }
   .splash-sub{ font-size:14px; color:#9fb6d8; margin-top:10px; letter-spacing:.14em; opacity:0; }
   .splash-hint{ margin-top:28px; font-size:15px; color:#cfe0f5; letter-spacing:.06em; animation:hintPulse 1.2s ease-in-out infinite; }
+  .splash-copy{ position:absolute; left:0; right:0; bottom:calc(env(safe-area-inset-bottom) + 22px); text-align:center; font-size:11px; color:#7f97b8; letter-spacing:.03em; }
   #splash.play .splash-logo{ animation:logoIn 1s cubic-bezier(.2,1.4,.35,1) both; }
   #splash.play .splash-title{ animation:titleIn .8s .35s both; }
   #splash.play .splash-sub{ animation:titleIn .8s .6s both; }
@@ -109,12 +110,11 @@
   .tc-lbl{ font-size:11px; color:var(--ink-dim); }
   .target-name{ width:4.4em; font-size:44px; font-weight:800; line-height:1.1; white-space:nowrap; overflow:hidden; }
   .tn-text{ display:inline-block; will-change:transform; }
-  .tn-text.scroll{ animation: tnMarquee var(--dur,5s) linear infinite alternate; }
-  @keyframes tnMarquee{ from{ transform:translateX(0); } to{ transform:translateX(var(--shift,0)); } }
+  .tn-text.scroll{ animation: tnMarquee var(--dur,6s) linear infinite; }   /* ① 右→左の一方向ループ */
+  @keyframes tnMarquee{ from{ transform:translateX(var(--from,0)); } to{ transform:translateX(var(--to,0)); } }
   .target-dist{ font-size:15px; color:var(--ink-dim); margin-top:4px; text-align:left; }
-  .target-eta{ text-align:right; flex-shrink:0; }
-  .target-eta .t{ font-family:var(--mono); font-size:26px; font-weight:700; white-space:nowrap; }
-  .target-eta .l{ font-size:10px; color:var(--ink-dim); }
+  .target-eta{ text-align:right; flex-shrink:0; font-family:var(--mono); font-weight:800; line-height:1.02; }  /* ⑪ 時・分を2段 */
+  .target-eta .t{ font-size:30px; }
 
   .rail{ display:flex; gap:3px; padding:6px 16px 2px; flex-wrap:wrap; }
   .rdot{ width:9px; height:9px; border-radius:50%; background:var(--panel-2); border:1px solid var(--ink-faint); }
@@ -134,17 +134,36 @@
   .sim-line .sl{ font-size:12px; color:var(--ink-dim); white-space:nowrap; }
   .sim-line input[type=range]{ flex:1; min-width:0; accent-color:var(--neutral); height:30px; }
   .sim-off-btn{ width:100%; padding:11px; border-radius:9px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:13px; font-weight:600; }
+
+  /* ⑥ 方向幕確認ポップアップ */
+  .overlay{ position:fixed; inset:0; z-index:90; background:rgba(0,0,0,.62); display:none; align-items:center; justify-content:center; padding:24px; }
+  .overlay.show{ display:flex; }
+  .dialog{ background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:22px 20px; max-width:430px; width:100%; text-align:center; }
+  .dialog .d-head{ font-size:13px; color:var(--ink-dim); }
+  .dialog .d-dest{ font-size:26px; font-weight:800; margin:8px 0 4px; }
+  .dialog .d-note{ font-size:14px; color:var(--late-y); margin-bottom:14px; }
+  .dialog .d-rows{ font-size:15px; text-align:left; background:var(--panel-2); border-radius:10px; padding:10px 14px; margin-bottom:18px; line-height:1.8; }
+  .dialog .d-ok{ width:100%; padding:15px; border:none; border-radius:11px; background:var(--ink); color:var(--bg); font-size:17px; font-weight:800; }
+  .dialog .d-cancel{ width:100%; padding:11px; border:none; border-radius:10px; background:transparent; color:var(--ink-dim); font-size:13px; margin-top:8px; }
+  /* トースト・補正表示 */
+  .toast{ position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 100px); transform:translateX(-50%); background:rgba(0,0,0,.85); color:#fff; padding:11px 20px; border-radius:20px; font-size:14px; z-index:80; opacity:0; transition:opacity .3s; pointer-events:none; max-width:90%; text-align:center; }
+  .toast.show{ opacity:1; }
+  .rdot.fixed{ background:var(--early); border-color:var(--early); }
+  #correctBtn{ background:#3a1414; border-color:#7a2b2b; color:#ffb4b4; }
 </style>
 </head>
 <body>
 
   <!-- オープニング(⑨) -->
-  <div id="splash"><div class="splash-inner">
-    <div class="splash-logo">🚌</div>
-    <div class="splash-title">ドラサポ</div>
-    <div class="splash-sub">しまバス ドライバーズサポート</div>
-    <div class="splash-hint" id="splashHint">画面をタップしてスタート</div>
-  </div></div>
+  <div id="splash">
+    <div class="splash-inner">
+      <div class="splash-logo">🚌</div>
+      <div class="splash-title">ドラサポ</div>
+      <div class="splash-sub">しまバス ドライバーズサポート</div>
+      <div class="splash-hint" id="splashHint">画面をタップしてスタート</div>
+    </div>
+    <div class="splash-copy">©2026 Hillsfactory　Powered by Claude</div>
+  </div>
 
   <!-- ===== 画面1: 設定 ===== -->
   <div class="screen active" id="scSetup">
@@ -192,7 +211,7 @@
         <div class="caption" id="caption">GPSを開始してください</div>
         <div class="target-card">
           <div class="tc-left"><div class="target-name" id="targetName"><span class="tn-text" id="tnText">—</span></div><div class="target-dist" id="targetDist"></div></div>
-          <div class="target-eta"><div class="t" id="targetEta">--:--</div></div>
+          <div class="target-eta"><div class="t" id="targetEtaH">--</div><div class="t" id="targetEtaM">--</div></div>
         </div>
         <div class="next-prev" id="nextPrev"></div>
       </div>
@@ -208,8 +227,8 @@
       <div class="controls secondary">
         <button id="modeBtn">デモ</button>
         <select id="radius" class="radius-sel"></select>
-        <button id="audioBtn">🔊音ON</button>
-        <button id="voiceBtn">女声</button>
+        <button id="volBtn">🔊大</button>
+        <button id="correctBtn">📍補正</button>
       </div>
       <div class="sim" id="simRow" style="display:none;">
         <div class="sim-line">
@@ -221,10 +240,24 @@
     </div>
   </div>
 
+  <!-- ⑥ 方向幕確認ポップアップ -->
+  <div class="overlay" id="confirmOverlay">
+    <div class="dialog">
+      <div class="d-head" id="cfHead">ダイヤ — ・ —</div>
+      <div class="d-dest" id="cfDest">この車は「—」行きです</div>
+      <div class="d-note">方向幕の変更を確認してください</div>
+      <div class="d-rows" id="cfRows"></div>
+      <button class="d-ok" id="cfOk">確認して開始</button>
+      <button class="d-cancel" id="cfCancel">キャンセル</button>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+
 <script>
 (function(){
   // tokyoknock.com 配下なら相対(同一オリジン=CORS不要)、それ以外(GitHub Pages等)は絶対URL
   const API_BASE = (location.origin === 'https://tokyoknock.com') ? 'api/' : 'https://tokyoknock.com/bus/api/';
+  const CORRECT_SECRET = 'shimabus-fix-2026';   // ⑫ 補正APIの合言葉(update_busstops.php と一致させる)
   let STOP_RADIUS_M = parseInt(lsGet('mon_radius') || '20', 10);   // 既定20m・画面で変更可
 
   function lsGet(k){ try{return localStorage.getItem(k);}catch(e){return null;} }
@@ -241,24 +274,32 @@
   let simOffset = -30;    // デモ時の秒オフセット(-30早発/+15遅れ 等)
   let lastLat=null, lastLng=null;
   let audioPrimed=false, lastEarlyAnnounce=0, terminalAnnounced=false;
-  let audioOn = (lsGet('mon_audio')!=='off');                        // ⑦ 既定ON
-  let voiceGender = (lsGet('mon_voice')==='male' ? 'male':'female'); // ⑥
-  let jaVoices = [];
+  let earlyIdx=-1, earlyN=0, okAnnouncedIdx=-1;                       // ⑤ 早発は最大3回・定刻案内
+  let corrections={};                                                // ⑫ 補正 {busstop_id:{lat,lng}}
+  let currentDiaNo=null;
+  let jaVoices=[];
+  // ③ 音量: 0=大,1=中,2=小,3=消
+  const VOL=[1.0,0.55,0.28,0], VOL_LABEL=['🔊大','🔉中','🔈小','🔇消'];
+  let volLevel = Math.min(3, Math.max(0, parseInt(lsGet('mon_vol')||'0',10)));
 
-  // ---- 音声(iOS Safari: ユーザー操作でunlock。声色/ON-OFF対応) ----
+  // ---- 音声(iOS Safari: ユーザー操作でunlock) ----
   function loadVoices(){ try{ jaVoices = window.speechSynthesis.getVoices().filter(v=>/ja|JP/i.test(v.lang)); }catch(e){} }
-  function pickVoice(){
-    if(!jaVoices.length) loadVoices();
-    if(!jaVoices.length) return null;
-    const male = jaVoices.find(v=>/otoya|hattori|ichiro|male|男/i.test(v.name));
-    const female = jaVoices.find(v=>/kyoko|o-?ren|female|女/i.test(v.name));
-    return voiceGender==='male' ? (male||jaVoices[0]) : (female || jaVoices.find(v=>v!==male) || jaVoices[0]);
-  }
   function primeAudio(){ if(audioPrimed) return; try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; window.speechSynthesis.speak(u); audioPrimed=true; }catch(e){} }
-  function speak(text){ if(!audioOn) return; try{ window.speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.lang='ja-JP'; const v=pickVoice(); if(v) u.voice=v; u.rate=1.0; window.speechSynthesis.speak(u); }catch(e){} }
+  function speak(text){
+    const vol=VOL[volLevel]; if(vol<=0) return;
+    try{ window.speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.lang='ja-JP';
+      if(!jaVoices.length) loadVoices(); if(jaVoices[0]) u.voice=jaVoices[0];
+      u.rate=1.0; u.volume=vol; window.speechSynthesis.speak(u);
+    }catch(e){}
+  }
+  const yomi = s => (s && (s.kana || s.name)) || '';   // ⑦ 発音はkana優先
   try{ window.speechSynthesis.onvoiceschanged=loadVoices; loadVoices(); }catch(e){}
 
   const $ = id => document.getElementById(id);
+  let toastT=null;
+  function toast(msg){ const el=$('toast'); if(!el) return; el.textContent=msg; el.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('show'), 2400); }
+  function setEta(hm){ const p=(hm||'--:--').split(':'); $('targetEtaH').textContent=p[0]||'--'; $('targetEtaM').textContent=p[1]||'--'; }  // ⑪ 時/分2段
+  function dispName(s){ return (s && corrections[s.busstop_id]) ? s.name+'🔴' : (s?s.name:''); }  // ⑫ 補正済は🔴
 
   // ---- 画面遷移 ----
   function clearStateClasses(){ document.body.classList.remove('state-early','state-ok','state-late-y','state-late-o'); }
@@ -296,7 +337,7 @@
       const j=await r.json();
       if(!r.ok || j.error){ setupMsg('取得失敗: '+(j.error||r.status), true); return; }
       if(!j.courses || !j.courses.length){ setupMsg(`ダイヤ ${j.dia_no}(${dayType===1?'平日':'土日祝'})のコースが見つかりません`, true); return; }
-      courses=j.courses;
+      courses=j.courses; currentDiaNo=j.dia_no;
       renderCourses(j);
       show('scList');
     }catch(e){ setupMsg('通信エラー: '+e.message, true); }
@@ -368,9 +409,9 @@
     } else {
       if(lastAtStopIndex===targetIndex){
         if(isLast) return { state:'terminal', stop, remainingSec, d };  // 終点からは進めない
-        const nextStop = stops[targetIndex+1];   // ⑧ 発車=半径を外れた → 次を案内
+        const nextStop = stops[targetIndex+1];   // 発車=半径を外れた → 次を案内
         advance();
-        if(nextStop) speak(`次は、${nextStop.name}です`);
+        if(nextStop){ speak((targetIndex===stops.length-1 ? '次は終点、' : '次は、') + yomi(nextStop) + 'です'); }  // ④/⑦
         if(targetIndex>=stops.length) return {state:'finished'};
         return evaluate(lat,lng,now);
       }
@@ -388,15 +429,13 @@
     curTargetName=name;
     const box=$('targetName'), t=$('tnText');
     t.classList.remove('scroll'); t.textContent=name;   // リセット
-    const over = t.scrollWidth - box.clientWidth;        // 同期測定(rAF不要)
-    if(over>2){
-      const dur=Math.max(3, over/28);
-      t.style.setProperty('--shift', (-over)+'px');
-      t.style.setProperty('--dur', dur+'s');
-      void t.offsetWidth;                                // reflowでアニメ再適用
-      t.classList.add('scroll');
+    const tw=t.scrollWidth, bw=box.clientWidth;
+    if(tw>bw+2){   // ① 右端から入り左へ抜ける一方向ループ
+      const from=bw, to=-tw, dur=Math.max(4, (from-to)/60);   // 60px/s
+      t.style.setProperty('--from', from+'px'); t.style.setProperty('--to', to+'px'); t.style.setProperty('--dur', dur+'s');
+      void t.offsetWidth; t.classList.add('scroll');
     } else {
-      t.style.removeProperty('--shift'); t.style.removeProperty('--dur');
+      t.style.removeProperty('--from'); t.style.removeProperty('--to'); t.style.removeProperty('--dur');
     }
   }
   // 「この次 →」行: 1行固定・長い時は自動縮小
@@ -410,8 +449,8 @@
     $('diff').className='diff appr'; $('diff').textContent='--:--';
     $('caption').textContent='GPS開始 または デモで確認';
     $('nextPrev').textContent=''; $('targetDist').textContent='';
-    terminalAnnounced=false; lastEarlyAnnounce=0; curTargetName=null;
-    if(stops[0]){ setTargetName(stops[0].name); $('targetEta').textContent=hhmm(stops[0]); }
+    terminalAnnounced=false; lastEarlyAnnounce=0; curTargetName=null; earlyIdx=-1; earlyN=0; okAnnouncedIdx=-1;
+    if(stops[0]){ setTargetName(dispName(stops[0])); setEta(hhmm(stops[0])); }
     updateRail();
   }
   // 遅れの程度で色分け: 5分以上=黄, 10分以上=橙 (remainingSecは負=遅れ)
@@ -430,24 +469,25 @@
       tag.classList.add('ok'); tag.textContent='🏁 終点に到着';
       diff.classList.add('ok'); diff.textContent='🏁';
       $('caption').textContent='終点に到着しました。お疲れさまでした';
-      setTargetName(st.stop.name); $('targetEta').textContent=hhmm(st.stop); $('nextPrev').textContent='';
-      if(!terminalAnnounced){ speak('終点に到着しました。お疲れさまでした'); terminalAnnounced=true; stopGps(); }   // 終点でGPS停止
+      setTargetName(dispName(st.stop)); setEta(hhmm(st.stop)); $('nextPrev').textContent='';
+      if(!terminalAnnounced){ speak('終点に到着しました。お疲れさまでした'); terminalAnnounced=true; stopRun(); }   // 終点でGPS停止+補正保存
       updateRail(); return;
     }
     if(st.state==='finished'){
       tag.classList.add('appr'); tag.textContent='運行終了(全停通過)'; diff.classList.add('appr'); diff.textContent='--:--';
-      $('caption').textContent='お疲れさまでした'; setTargetName('—'); $('targetEta').textContent='--:--'; $('nextPrev').textContent=''; $('targetDist').textContent='';
+      $('caption').textContent='お疲れさまでした'; setTargetName('—'); setEta('--:--'); $('nextPrev').textContent=''; $('targetDist').textContent='';
       updateRail(); return;
     }
-    setTargetName(st.stop.name);
-    $('targetEta').textContent=hhmm(st.stop);
+    setTargetName(dispName(st.stop));
+    setEta(hhmm(st.stop));
 
     if(st.state==='early'){
       document.body.classList.add('state-early');
       tag.classList.add('early'); tag.textContent='🚨 早発注意';
       diff.classList.add('early'); diff.textContent=fmtSec(st.remainingSec);
       $('caption').textContent='';   // 冗長なメッセージは非表示(タグと大きな残り秒で十分)
-      { const t=Date.now(); if(t-lastEarlyAnnounce>7000){ speak('早発です'); lastEarlyAnnounce=t; } }   // ⑧ 音声
+      if(earlyIdx!==targetIndex){ earlyIdx=targetIndex; earlyN=0; }                  // ⑤ 停留所ごとにカウント
+      { const t=Date.now(); if(earlyN<3 && t-lastEarlyAnnounce>4000){ speak('早発です'); lastEarlyAnnounce=t; earlyN++; } }  // 最大3回
     } else if(st.state==='ok'){
       const lc=lateClass(st.remainingSec);
       if(lc==='o'){ document.body.classList.add('state-late-o'); tag.classList.add('late-o'); diff.classList.add('late-o'); tag.textContent='⚠ 大幅遅れ'; }
@@ -455,6 +495,7 @@
       else { document.body.classList.add('state-ok'); tag.classList.add('ok'); diff.classList.add('ok'); tag.textContent='✅ 正常運行'; }
       diff.textContent='+'+fmtSec(st.remainingSec);
       $('caption').textContent = st.remainingSec<-3 ? `定刻より ${fmtSec(st.remainingSec)} 遅れ` : '定刻到達';
+      if(earlyIdx===targetIndex && earlyN>0 && okAnnouncedIdx!==targetIndex){ okAnnouncedIdx=targetIndex; speak('定刻です、出発してください'); }  // ⑤ 定刻案内(1回)
     } else if(st.state==='waiting'){   // ⑤ 始発地は早発警告しない
       tag.classList.add('appr'); tag.textContent='🚏 始発 待機';
       diff.classList.add('appr'); diff.textContent=fmtSec(st.remainingSec);
@@ -478,7 +519,7 @@
   }
   function buildRail(){ const rail=$('rail'); rail.innerHTML=''; stops.forEach((s,i)=>{ const d=document.createElement('div'); d.className='rdot'; d.dataset.i=i; rail.appendChild(d); }); }
   function updateRail(){
-    document.querySelectorAll('.rdot').forEach(d=>{ const i=+d.dataset.i; d.classList.toggle('passed', i<targetIndex); d.classList.toggle('cur', i===targetIndex); });
+    document.querySelectorAll('.rdot').forEach(d=>{ const i=+d.dataset.i; d.classList.toggle('passed', i<targetIndex); d.classList.toggle('cur', i===targetIndex); const s=stops[i]; d.classList.toggle('fixed', !!(s && corrections[s.busstop_id])); });
     const cur=stops[targetIndex];
     $('railTxt').textContent = targetIndex<stops.length ? `${targetIndex+1} / ${stops.length}　次: ${cur?cur.name:''}` : `${stops.length} / ${stops.length} 完了`;
   }
@@ -496,19 +537,55 @@
     $('startBtn').textContent='停止';
   }
   function stopGps(){ if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null; } $('startBtn').textContent='開始'; }
+  // ⑥ 開始→確認ポップアップ→確認で開始 / ⑫ 停止で補正保存
+  function beginRun(){ speak('ドラサポを開始します。キバリンショロー、ご安全に！'); startGps(); }
+  function showConfirm(){
+    if(!course){ beginRun(); return; }
+    $('cfHead').textContent = `ダイヤ ${currentDiaNo||''} ・ ${dayType===1?'平日':'土日祝'}`;
+    $('cfDest').textContent = `この車は「${course.end_place||'—'}」行きです`;
+    $('cfRows').innerHTML = `ダイヤ番号：${currentDiaNo||'—'}<br>タッチ番号：${course.touch_no||'—'}` + (course.digital_no?`<br>デジタル番号：${course.digital_no}`:'');
+    $('confirmOverlay').classList.add('show');
+  }
+  $('cfCancel').addEventListener('click', ()=> $('confirmOverlay').classList.remove('show'));
+  $('cfOk').addEventListener('click', ()=>{ $('confirmOverlay').classList.remove('show'); primeAudio(); beginRun(); });
+  async function flushCorrections(){
+    const ids=Object.keys(corrections); if(!ids.length) return;
+    const fixes=ids.map(id=>({busstop_id:+id, lat:corrections[id].lat, lng:corrections[id].lng}));
+    try{
+      const r=await fetch(`${API_BASE}update_busstops.php`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({secret:CORRECT_SECRET, fixes})});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok && j.updated!=null){ toast(`座標を ${j.updated} 件 更新しました`); corrections={}; updateRail(); }
+      else { toast('座標更新に失敗: '+((j&&j.error)||('HTTP '+r.status))); }
+    }catch(e){ toast('座標更新の通信に失敗しました'); }
+  }
+  function stopRun(){ flushCorrections(); stopGps(); }
   $('startBtn').addEventListener('click', ()=>{
     primeAudio();
     if(mode==='gps'){
-      if(watchId===null){ speak('ドラサポを開始します。ぜんしゅうちゅうで、ご安全に！'); startGps(); }   // ⑤ 開始アナウンス
-      else stopGps();
+      if(watchId===null){ showConfirm(); }   // ⑥ 確認ポップアップ
+      else stopRun();                          // ⑫ 停止時に補正をDBへ
     } else { runDemo(); }
+  });
+  // ⑫ 補正: 現在地を対象バス停の新座標として一時取得(停止時にまとめて保存)
+  $('correctBtn').addEventListener('click', ()=>{
+    const stop=stops[targetIndex]; if(!stop){ toast('対象バス停がありません'); return; }
+    if(!navigator.geolocation){ toast('この端末はGPS非対応'); return; }
+    toast('現在地を取得中…');
+    navigator.geolocation.getCurrentPosition(p=>{
+      const lat=p.coords.latitude, lng=p.coords.longitude;
+      corrections[stop.busstop_id]={lat,lng};
+      stop.lat=lat; stop.lng=lng;                    // その場の判定にも反映
+      toast(`「${stop.name}」を補正(±${Math.round(p.coords.accuracy)}m)・停止時に保存`);
+      if(mode==='demo') runDemo(); else if(lastLat!=null) update(lastLat,lastLng,new Date()); else setTargetName(dispName(stop));
+      updateRail();
+    }, e=> toast('現在地取得に失敗: '+e.message), {enableHighAccuracy:true, timeout:15000, maximumAge:0});
   });
 
   // ---- 手動で対象バス停を前/次へ(⑥) ----
   function refreshAfterNav(){
     if(mode==='demo') return runDemo();
     if(lastLat!=null) return update(lastLat,lastLng,new Date());
-    const s=stops[targetIndex]; if(s){ setTargetName(s.name); $('targetEta').textContent=hhmm(s); }
+    const s=stops[targetIndex]; if(s){ setTargetName(dispName(s)); setEta(hhmm(s)); }
     const nxt=stops[targetIndex+1]; setNextPrev(nxt?`次々は ${nxt.name}（${hhmm(nxt)}）`:'次々は 終点');
     updateRail();
   }
@@ -541,18 +618,13 @@
     render(evaluate(stop.lat, stop.lng, fakeNow));
   }
 
-  // ---- 音声ON/OFF(⑦)・声色(⑥) ----
-  function updateAudioBtn(){ $('audioBtn').textContent = audioOn ? '🔊音ON' : '🔇音OFF'; }
-  function updateVoiceBtn(){ $('voiceBtn').textContent = voiceGender==='male' ? '男声' : '女声'; }
-  $('audioBtn').addEventListener('click', ()=>{
-    audioOn=!audioOn; lsSet('mon_audio', audioOn?'on':'off'); updateAudioBtn();
-    if(audioOn){ primeAudio(); speak('音声オン'); } else { try{ window.speechSynthesis.cancel(); }catch(e){} }
+  // ---- ③ 音量(大/中/小/消 の4段) ----
+  function updateVolBtn(){ $('volBtn').textContent = VOL_LABEL[volLevel]; }
+  $('volBtn').addEventListener('click', ()=>{
+    volLevel=(volLevel+1)%4; lsSet('mon_vol',String(volLevel)); updateVolBtn();
+    if(VOL[volLevel]>0){ primeAudio(); speak('音量'+['大','中','小'][volLevel]); }
   });
-  $('voiceBtn').addEventListener('click', ()=>{
-    voiceGender = voiceGender==='male' ? 'female':'male'; lsSet('mon_voice', voiceGender); updateVoiceBtn();
-    primeAudio(); speak('この声で案内します');
-  });
-  updateAudioBtn(); updateVoiceBtn();
+  updateVolBtn();
 
   // ---- 判定半径プルダウン(5m刻み・既定20m・localStorage保存) ----
   (function initRadius(){
@@ -567,7 +639,7 @@
   // ---- ⑨ オープニング: タップでアニメ+ファンファーレを同時再生(iOSの自動再生制限に対応) ----
   function scheduleFanfare(ctx){
     try{
-      const master=ctx.createGain(); master.gain.value=0.32; master.connect(ctx.destination);
+      const master=ctx.createGain(); master.gain.value=0.5; master.connect(ctx.destination);
       const note=(f,s,d,v)=>{
         const o=ctx.createOscillator(), o2=ctx.createOscillator(), g=ctx.createGain();
         o.type='sawtooth'; o2.type='square'; o.frequency.value=f; o2.frequency.value=f; o2.detune.value=7;
@@ -590,7 +662,6 @@
   (function opening(){
     const splash=$('splash'); if(!splash) return;
     const hint=$('splashHint');
-    let ctx=null; try{ const AC=window.AudioContext||window.webkitAudioContext; if(AC) ctx=new AC(); }catch(e){}
     let started=false;
     function hideSplash(){ splash.classList.add('hide'); setTimeout(()=>{ if(splash.parentNode) splash.remove(); }, 600); }
     function go(){
@@ -598,19 +669,21 @@
       if(hint) hint.style.display='none';
       splash.classList.add('play');            // アニメ開始
       setTimeout(hideSplash, 2700);            // 遷移は音に依存せず必ず実行
-      try{                                     // 音は別処理(失敗しても遷移は進む)
-        if(ctx){
-          const fire=()=>{ try{ scheduleFanfare(ctx); }catch(e){} };
-          if(ctx.state==='suspended') ctx.resume().then(fire).catch(()=>{}); else fire();
-        }
-      }catch(e){}
+      // ⑨ AudioContextはタップ(gesture)内で生成→iOSでも鳴る
+      try{ const AC=window.AudioContext||window.webkitAudioContext; if(AC){ const ctx=new AC(); if(ctx.state==='suspended') ctx.resume(); scheduleFanfare(ctx); } }catch(e){}
     }
-    if(ctx && ctx.state==='running'){ go(); }  // 自動再生可(PC/Android)は即
-    else {                                     // iOS等はタップ待ち(複数イベントで確実に検知)
-      ['pointerdown','touchstart','click'].forEach(ev=>{ splash.addEventListener(ev, go); document.addEventListener(ev, go); });
-      setTimeout(go, 10000);                   // 保険: 無操作でも10秒で必ず進む
-    }
+    ['pointerdown','touchstart','click'].forEach(ev=>{ splash.addEventListener(ev, go); document.addEventListener(ev, go); });
+    setTimeout(go, 10000);                      // 保険: 無操作でも10秒で必ず進む
   })();
+
+  // ---- ⑧ 下スワイプの引っ張り更新を抑止(最上部で下方向のみ) ----
+  let ptStartY=0;
+  document.addEventListener('touchstart', e=>{ if(e.touches[0]) ptStartY=e.touches[0].clientY; }, {passive:true});
+  document.addEventListener('touchmove', e=>{
+    if(!e.touches[0]) return;
+    const el=document.scrollingElement||document.documentElement;
+    if(el.scrollTop<=0 && e.touches[0].clientY>ptStartY){ e.preventDefault(); }
+  }, {passive:false});
 
   // ---- Service Worker ----
   if('serviceWorker' in navigator && location.protocol==='https:'){
