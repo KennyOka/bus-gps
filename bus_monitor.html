@@ -167,6 +167,7 @@
     </div>
     <div class="splash-copy">©2026 Hillsfactory　Powered by Claude</div>
   </div>
+  <audio id="bgm" src="./fanfare.wav" preload="auto" playsinline></audio>
 
   <!-- ===== 画面1: 設定 ===== -->
   <div class="screen active" id="scSetup">
@@ -687,16 +688,8 @@
       if(hint) hint.style.display='none';
       splash.classList.add('play');            // アニメ開始
       setTimeout(hideSplash, 2700);            // 遷移は音に依存せず必ず実行
-      // ⑨ iOS対策: gesture内でctx生成→無音バッファでunlock→resume後に発音
-      try{
-        const AC=window.AudioContext||window.webkitAudioContext;
-        if(AC){
-          const ctx=new AC();
-          try{ const b=ctx.createBuffer(1,1,22050); const s=ctx.createBufferSource(); s.buffer=b; s.connect(ctx.destination); s.start(0); }catch(e){}
-          const fire=()=>{ try{ scheduleFanfare(ctx); }catch(e){} };
-          if(ctx.state==='suspended'){ ctx.resume().then(fire).catch(fire); } else { fire(); }
-        }
-      }catch(e){}
+      // ⑨ 起動音: 事前生成した音源を再生(iOSでも確実。読み上げと同じHTMLメディア経由)
+      try{ const a=$('bgm'); if(a){ a.volume=1.0; a.currentTime=0; const pr=a.play(); if(pr && pr.catch) pr.catch(()=>{}); } }catch(e){}
     }
     ['pointerdown','touchstart','click'].forEach(ev=>{ splash.addEventListener(ev, go); document.addEventListener(ev, go); });
     setTimeout(go, 10000);                      // 保険: 無操作でも10秒で必ず進む
