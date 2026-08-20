@@ -657,7 +657,7 @@
   // ---- ⑨ オープニング: タップでアニメ+ファンファーレを同時再生(iOSの自動再生制限に対応) ----
   function scheduleFanfare(ctx){
     try{
-      const master=ctx.createGain(); master.gain.value=0.5; master.connect(ctx.destination);
+      const master=ctx.createGain(); master.gain.value=0.6; master.connect(ctx.destination);
       const note=(f,s,d,v)=>{
         const o=ctx.createOscillator(), o2=ctx.createOscillator(), g=ctx.createGain();
         o.type='sawtooth'; o2.type='square'; o.frequency.value=f; o2.frequency.value=f; o2.detune.value=7;
@@ -667,7 +667,7 @@
         o.start(s); o2.start(s); o.stop(s+d+0.05); o2.stop(s+d+0.05);
       };
       const C5=523.25,G4=392,E5=659.25,G5=784,C6=1046.5;
-      let t=ctx.currentTime+0.05;
+      let t=ctx.currentTime+0.12;
       note(C5,t,0.16,0.45); t+=0.17;
       note(G4,t,0.12,0.40); t+=0.14;
       note(C5,t,0.12,0.45); t+=0.16;
@@ -687,8 +687,16 @@
       if(hint) hint.style.display='none';
       splash.classList.add('play');            // アニメ開始
       setTimeout(hideSplash, 2700);            // 遷移は音に依存せず必ず実行
-      // ⑨ AudioContextはタップ(gesture)内で生成→iOSでも鳴る
-      try{ const AC=window.AudioContext||window.webkitAudioContext; if(AC){ const ctx=new AC(); if(ctx.state==='suspended') ctx.resume(); scheduleFanfare(ctx); } }catch(e){}
+      // ⑨ iOS対策: gesture内でctx生成→無音バッファでunlock→resume後に発音
+      try{
+        const AC=window.AudioContext||window.webkitAudioContext;
+        if(AC){
+          const ctx=new AC();
+          try{ const b=ctx.createBuffer(1,1,22050); const s=ctx.createBufferSource(); s.buffer=b; s.connect(ctx.destination); s.start(0); }catch(e){}
+          const fire=()=>{ try{ scheduleFanfare(ctx); }catch(e){} };
+          if(ctx.state==='suspended'){ ctx.resume().then(fire).catch(fire); } else { fire(); }
+        }
+      }catch(e){}
     }
     ['pointerdown','touchstart','click'].forEach(ev=>{ splash.addEventListener(ev, go); document.addEventListener(ev, go); });
     setTimeout(go, 10000);                      // 保険: 無操作でも10秒で必ず進む
