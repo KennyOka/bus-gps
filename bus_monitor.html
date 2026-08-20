@@ -501,7 +501,7 @@
       else { document.body.classList.add('state-ok'); tag.classList.add('ok'); diff.classList.add('ok'); tag.textContent='✅ 正常運行'; }
       diff.textContent='+'+fmtSec(st.remainingSec);
       $('caption').textContent = st.remainingSec<-3 ? `定刻より ${fmtSec(st.remainingSec)} 遅れ` : '定刻到達';
-      if(preOkIdx===targetIndex && okAnnouncedIdx!==targetIndex){ okAnnouncedIdx=targetIndex; speak('定刻です、発車してください'); }  // ②定刻案内(早発だった停/始発地で1回)
+      if(preOkIdx===targetIndex && okAnnouncedIdx!==targetIndex){ okAnnouncedIdx=targetIndex; speak('定刻です。'); }  // ②定刻案内(早発だった停/始発地で1回)
     } else if(st.state==='waiting'){   // 始発地は早発警告しない
       tag.classList.add('appr'); tag.textContent='🚏 始発 待機';
       diff.classList.add('appr'); diff.textContent=fmtSec(st.remainingSec);
