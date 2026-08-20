@@ -110,8 +110,8 @@
   .tc-lbl{ font-size:11px; color:var(--ink-dim); }
   .target-name{ width:4.4em; font-size:44px; font-weight:800; line-height:1.1; white-space:nowrap; overflow:hidden; }
   .tn-text{ display:inline-block; will-change:transform; }
-  .tn-text.scroll{ animation: tnMarquee var(--dur,6s) linear infinite; }   /* ① 右→左の一方向ループ */
-  @keyframes tnMarquee{ from{ transform:translateX(var(--from,0)); } to{ transform:translateX(var(--to,0)); } }
+  .tn-text.scroll{ animation: tnMarquee var(--dur,7s) linear infinite; }   /* ④ 先頭表示→左スクロール→繰り返し */
+  @keyframes tnMarquee{ 0%,12%{ transform:translateX(0); } 88%,100%{ transform:translateX(var(--to,0)); } }
   .target-dist{ font-size:15px; color:var(--ink-dim); margin-top:4px; text-align:left; }
   .target-eta{ text-align:right; flex-shrink:0; font-family:var(--mono); font-weight:800; line-height:1.02; }  /* ⑪ 時・分を2段 */
   .target-eta .t{ font-size:30px; }
@@ -142,7 +142,10 @@
   .dialog .d-head{ font-size:13px; color:var(--ink-dim); }
   .dialog .d-dest{ font-size:26px; font-weight:800; margin:8px 0 4px; }
   .dialog .d-note{ font-size:14px; color:var(--late-y); margin-bottom:14px; }
-  .dialog .d-rows{ font-size:15px; text-align:left; background:var(--panel-2); border-radius:10px; padding:10px 14px; margin-bottom:18px; line-height:1.8; }
+  .dialog .d-rows{ text-align:left; background:var(--panel-2); border-radius:10px; padding:12px 16px; margin-bottom:18px; }
+  .dialog .d-row{ display:flex; justify-content:space-between; align-items:baseline; gap:12px; padding:4px 0; }
+  .dialog .d-k{ font-size:14px; color:var(--ink-dim); white-space:nowrap; }
+  .dialog .d-v{ font-size:30px; font-weight:800; font-family:var(--mono); letter-spacing:.02em; }
   .dialog .d-ok{ width:100%; padding:15px; border:none; border-radius:11px; background:var(--ink); color:var(--bg); font-size:17px; font-weight:800; }
   .dialog .d-cancel{ width:100%; padding:11px; border:none; border-radius:10px; background:transparent; color:var(--ink-dim); font-size:13px; margin-top:8px; }
   /* トースト・補正表示 */
@@ -258,6 +261,7 @@
   // tokyoknock.com 配下なら相対(同一オリジン=CORS不要)、それ以外(GitHub Pages等)は絶対URL
   const API_BASE = (location.origin === 'https://tokyoknock.com') ? 'api/' : 'https://tokyoknock.com/bus/api/';
   const CORRECT_SECRET = 'shimabus-fix-2026';   // ⑫ 補正APIの合言葉(update_busstops.php と一致させる)
+  const EARLY_GRACE = 15;                        // ① 定刻の15秒前以内は早発としない(許容)
   let STOP_RADIUS_M = parseInt(lsGet('mon_radius') || '20', 10);   // 既定20m・画面で変更可
 
   function lsGet(k){ try{return localStorage.getItem(k);}catch(e){return null;} }
@@ -274,7 +278,7 @@
   let simOffset = -30;    // デモ時の秒オフセット(-30早発/+15遅れ 等)
   let lastLat=null, lastLng=null;
   let audioPrimed=false, lastEarlyAnnounce=0, terminalAnnounced=false;
-  let earlyIdx=-1, earlyN=0, okAnnouncedIdx=-1;                       // ⑤ 早発は最大3回・定刻案内
+  let earlyIdx=-1, earlyN=0, okAnnouncedIdx=-1, preOkIdx=-1;          // 早発回数・定刻案内
   let corrections={};                                                // ⑫ 補正 {busstop_id:{lat,lng}}
   let currentDiaNo=null;
   let jaVoices=[];
@@ -404,8 +408,8 @@
     if(d<=STOP_RADIUS_M){
       lastAtStopIndex=targetIndex;
       if(isLast) return { state:'terminal', stop, remainingSec, d };   // 終点は早発判定せず到着扱い
-      if(targetIndex===0 && remainingSec>0) return { state:'waiting', stop, remainingSec, d };  // ⑤ 始発
-      return { state: remainingSec>0?'early':'ok', stop, remainingSec, d };
+      if(targetIndex===0 && remainingSec>EARLY_GRACE) return { state:'waiting', stop, remainingSec, d };  // 始発待機
+      return { state: remainingSec>EARLY_GRACE ? 'early' : 'ok', stop, remainingSec, d };   // ① 15秒以内は早発としない
     } else {
       if(lastAtStopIndex===targetIndex){
         if(isLast) return { state:'terminal', stop, remainingSec, d };  // 終点からは進めない
@@ -430,12 +434,13 @@
     const box=$('targetName'), t=$('tnText');
     t.classList.remove('scroll'); t.textContent=name;   // リセット
     const tw=t.scrollWidth, bw=box.clientWidth;
-    if(tw>bw+2){   // ① 右端から入り左へ抜ける一方向ループ
-      const from=bw, to=-tw, dur=Math.max(4, (from-to)/60);   // 60px/s
-      t.style.setProperty('--from', from+'px'); t.style.setProperty('--to', to+'px'); t.style.setProperty('--dur', dur+'s');
+    if(tw>bw+2){   // ④ 先頭(約4文字)を表示してから左へスクロール(繰り返し)
+      const to=-(tw-bw), scrollDist=(tw-bw);
+      const dur=Math.max(5, (scrollDist/40)/0.76);   // スクロール部を約40px/s
+      t.style.setProperty('--to', to+'px'); t.style.setProperty('--dur', dur+'s');
       void t.offsetWidth; t.classList.add('scroll');
     } else {
-      t.style.removeProperty('--from'); t.style.removeProperty('--to'); t.style.removeProperty('--dur');
+      t.style.removeProperty('--to'); t.style.removeProperty('--dur');
     }
   }
   // 「この次 →」行: 1行固定・長い時は自動縮小
@@ -449,7 +454,7 @@
     $('diff').className='diff appr'; $('diff').textContent='--:--';
     $('caption').textContent='GPS開始 または デモで確認';
     $('nextPrev').textContent=''; $('targetDist').textContent='';
-    terminalAnnounced=false; lastEarlyAnnounce=0; curTargetName=null; earlyIdx=-1; earlyN=0; okAnnouncedIdx=-1;
+    terminalAnnounced=false; lastEarlyAnnounce=0; curTargetName=null; earlyIdx=-1; earlyN=0; okAnnouncedIdx=-1; preOkIdx=-1;
     if(stops[0]){ setTargetName(dispName(stops[0])); setEta(hhmm(stops[0])); }
     updateRail();
   }
@@ -486,6 +491,7 @@
       tag.classList.add('early'); tag.textContent='🚨 早発注意';
       diff.classList.add('early'); diff.textContent=fmtSec(st.remainingSec);
       $('caption').textContent='';   // 冗長なメッセージは非表示(タグと大きな残り秒で十分)
+      preOkIdx=targetIndex;                                                          // 定刻案内の対象に
       if(earlyIdx!==targetIndex){ earlyIdx=targetIndex; earlyN=0; }                  // ⑤ 停留所ごとにカウント
       { const t=Date.now(); if(earlyN<3 && t-lastEarlyAnnounce>4000){ speak('早発です'); lastEarlyAnnounce=t; earlyN++; } }  // 最大3回
     } else if(st.state==='ok'){
@@ -495,11 +501,12 @@
       else { document.body.classList.add('state-ok'); tag.classList.add('ok'); diff.classList.add('ok'); tag.textContent='✅ 正常運行'; }
       diff.textContent='+'+fmtSec(st.remainingSec);
       $('caption').textContent = st.remainingSec<-3 ? `定刻より ${fmtSec(st.remainingSec)} 遅れ` : '定刻到達';
-      if(earlyIdx===targetIndex && earlyN>0 && okAnnouncedIdx!==targetIndex){ okAnnouncedIdx=targetIndex; speak('定刻です、出発してください'); }  // ⑤ 定刻案内(1回)
-    } else if(st.state==='waiting'){   // ⑤ 始発地は早発警告しない
+      if(preOkIdx===targetIndex && okAnnouncedIdx!==targetIndex){ okAnnouncedIdx=targetIndex; speak('定刻です、発車してください'); }  // ②定刻案内(早発だった停/始発地で1回)
+    } else if(st.state==='waiting'){   // 始発地は早発警告しない
       tag.classList.add('appr'); tag.textContent='🚏 始発 待機';
       diff.classList.add('appr'); diff.textContent=fmtSec(st.remainingSec);
       $('caption').textContent=`定刻(${hhmm(st.stop)})まで待機`;
+      preOkIdx=targetIndex;   // 始発地でも定刻案内の対象に
     } else { // approaching
       if(st.remainingSec<0){
         const lc=lateClass(st.remainingSec);
@@ -542,8 +549,11 @@
   function showConfirm(){
     if(!course){ beginRun(); return; }
     $('cfHead').textContent = `ダイヤ ${currentDiaNo||''} ・ ${dayType===1?'平日':'土日祝'}`;
-    $('cfDest').textContent = `この車は「${course.end_place||'—'}」行きです`;
-    $('cfRows').innerHTML = `ダイヤ番号：${currentDiaNo||'—'}<br>タッチ番号：${course.touch_no||'—'}` + (course.digital_no?`<br>デジタル番号：${course.digital_no}`:'');
+    $('cfDest').textContent = `この便は「${course.end_place||'—'}」行きです`;
+    $('cfRows').innerHTML =
+      `<div class="d-row"><span class="d-k">ダイヤ番号</span><span class="d-v">${currentDiaNo||'—'}</span></div>`+
+      `<div class="d-row"><span class="d-k">タッチ番号</span><span class="d-v">${course.touch_no||'—'}</span></div>`+
+      (course.digital_no?`<div class="d-row"><span class="d-k">デジタル番号</span><span class="d-v">${course.digital_no}</span></div>`:'');
     $('confirmOverlay').classList.add('show');
   }
   $('cfCancel').addEventListener('click', ()=> $('confirmOverlay').classList.remove('show'));
