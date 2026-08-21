@@ -67,6 +67,10 @@
     width:100%; background:var(--panel); border:1px solid var(--line); color:var(--ink);
     border-radius:9px; padding:12px; font-size:17px; font-family:var(--sans);
   }
+  #dateInput{ font-size:34px; padding:14px 12px; text-align:center; font-family:var(--mono); font-weight:700; }
+  .dia-row{ display:flex; gap:8px; align-items:stretch; }
+  .dia-row input{ flex:2; min-width:0; }
+  .dia-row .big-btn{ flex:3; white-space:nowrap; padding:12px 10px; font-size:15px; }
   .seg{ display:flex; gap:8px; }
   .seg button{ flex:1; padding:12px; border-radius:9px; border:1px solid var(--line); background:var(--panel); color:var(--ink-dim); font-size:14px; font-weight:600; }
   .seg button.active{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
@@ -201,9 +205,11 @@
       <button class="dia-list-btn" id="diaListBtn">📋 ダイヤ一覧を表示</button>
       <div class="field">
         <label>ダイヤ番号</label>
-        <input type="number" id="diaInput" inputmode="numeric" placeholder="例: 31">
+        <div class="dia-row">
+          <input type="number" id="diaInput" inputmode="numeric" placeholder="例: 31">
+          <button class="big-btn" id="loadCoursesBtn">コース一覧を取得</button>
+        </div>
       </div>
-      <button class="big-btn" id="loadCoursesBtn">コース一覧を取得</button>
       <div class="msg" id="setupMsg"></div>
     </div>
   </div>
@@ -417,7 +423,7 @@
       wrap.appendChild(btn);
     });
   }
-  $('backToSetup').onclick=()=>show('scSetup');
+  $('backToSetup').onclick=()=>{ setupMsg(''); show('scSetup'); };
 
   // ---- コース選択→停留所取得→モニター ----
   async function selectCourse(c){
