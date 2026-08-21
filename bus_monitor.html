@@ -263,9 +263,8 @@
           <button class="live-btn" id="liveBtn">▶ ライブ運行</button>
           <select id="liveSpeed" class="radius-sel">
             <option value="1">実時間</option>
-            <option value="5">×5</option>
-            <option value="20" selected>×20</option>
-            <option value="60">×60</option>
+            <option value="60" selected>×60</option>
+            <option value="180">×180</option>
           </select>
         </div>
         <div class="sim-line">
@@ -694,7 +693,7 @@
   });
   $('simStop').addEventListener('input', ()=>{
     targetIndex=+$('simStop').value; lastAtStopIndex=-1;
-    if(liveRunning()){ liveWall0=Date.now(); liveSched0=schedDate(stops[targetIndex]).getTime(); liveSpokenIdx=targetIndex; liveTick(); }
+    if(liveRunning()){ liveWall0=Date.now(); liveSched0=schedDate(stops[targetIndex]).getTime(); liveSpokenIdx=-1; liveArrivedIdx=-1; liveTick(); }
     else runDemo();
   });
   $('simOff').addEventListener('click', ()=>{
@@ -702,7 +701,8 @@
     simOffset = simOffset===-30 ? 15 : (simOffset===15 ? 330 : (simOffset===330 ? 660 : -30));
     $('simOff').textContent = simOffset<0 ? `早発${simOffset}s`
       : (simOffset>=600 ? '遅れ+11分(橙)' : (simOffset>=300 ? '遅れ+5.5分(黄)' : `遅れ+${simOffset}s`));
-    runDemo();
+    if(liveRunning()){ liveReanchor(); liveArrivedIdx=-1; liveTick(); }   // ⑦ ライブ中もバイアスを即反映
+    else runDemo();
   });
   function runDemo(){
     if(!stops.length) return;
@@ -713,41 +713,57 @@
     render(evaluate(stop.lat, stop.lng, fakeNow));
   }
 
-  // ---- ⑦ ライブ運行デモ: 対象停の定刻を「今」に合わせ、実時間(×倍速可)で自動進行 ----
+  // ---- ⑦ ライブ運行デモ: 実時間(×倍速)で自動進行。到着時に下段の早発/遅れバイアスを反映して画面を再現 ----
+  const LIVE_DWELL_MS = 3500;   // 各停の「到着表示」を実時間で保持する長さ
   let liveTimer=null, liveWall0=0, liveSched0=0, liveSpeed=20, liveSpokenIdx=-1;
+  let liveArrivedIdx=-1, liveDwellEnd=0;
   function liveRunning(){ return liveTimer!==null; }
+  // 仮想の現在時刻(ms)
+  function liveEffNow(){ return liveSched0 + (Date.now()-liveWall0)*liveSpeed; }
+  // 実時刻を保ったまま基準を取り直す(速度/バイアス変更・スライダー操作時)
+  function liveReanchor(){ const e=liveEffNow(); liveWall0=Date.now(); liveSched0=e; }
   function liveStart(){
     if(!stops.length){ toast('停留所データがありません'); return; }
     liveSpeed = parseInt($('liveSpeed').value,10)||1;
     liveWall0 = Date.now();
-    liveSched0 = schedDate(stops[targetIndex]).getTime();   // 現在の対象停の定刻＝いま、として発車
-    liveSpokenIdx = targetIndex;
+    liveSched0 = schedDate(stops[targetIndex]).getTime();   // 現在の対象停の定刻＝いま、を起点に運行開始
+    liveSpokenIdx = -1; liveArrivedIdx = -1;
     liveTimer = setInterval(liveTick, 250);
     $('liveBtn').textContent='■ 停止'; $('liveBtn').classList.add('on');
     primeAudio(); liveTick();
   }
   function liveStop(){ if(liveTimer){ clearInterval(liveTimer); liveTimer=null; } const b=$('liveBtn'); if(b){ b.textContent='▶ ライブ運行'; b.classList.remove('on'); } }
   function liveTick(){
-    const effNow = new Date(liveSched0 + (Date.now()-liveWall0)*liveSpeed);   // 仮想の現在時刻(発時刻起点)
-    // 定刻を過ぎた停は通過扱いで次へ
-    while(targetIndex<stops.length-1 && schedDate(stops[targetIndex]).getTime() <= effNow.getTime()){
-      targetIndex++; lastAtStopIndex=-1;
-    }
-    $('simStop').value=String(targetIndex);
+    const now=Date.now();
+    const effNow=liveEffNow();
     const stop=stops[targetIndex];
-    const remainingSec=(schedDate(stop).getTime()-effNow.getTime())/1000;
+    const schedT=schedDate(stop).getTime();
+    const arriveT=schedT + simOffset*1000;    // このバスが実際に到着する仮想時刻(=定刻+バイアス)
     const isLast=targetIndex===stops.length-1;
-    if(liveSpokenIdx!==targetIndex){ liveSpokenIdx=targetIndex; speak((isLast?'次は終点、':'次は、')+yomi(stop)+'です'); }
-    let st;
-    if(isLast && remainingSec<=0){ st={state:'terminal', stop, remainingSec, d:0}; render(st); liveStop(); return; }
-    else if(remainingSec<=EARLY_GRACE){ st={state:'ok', stop, remainingSec, d:0}; }   // 定刻到達(±)
-    else { st={state:'approaching', stop, remainingSec, d:null}; }   // 走行中(次停までカウント)
-    render(st);
+    $('simStop').value=String(targetIndex);
+
+    // まだ到着していない → 走行中(定刻との差をカウント)
+    if(liveArrivedIdx!==targetIndex && effNow < arriveT){
+      if(liveSpokenIdx!==targetIndex){ liveSpokenIdx=targetIndex; speak((isLast?'次は終点、':'次は、')+yomi(stop)+'です'); }
+      render({state:'approaching', stop, remainingSec:(schedT-effNow)/1000, d:null});
+      return;
+    }
+    // 到着 → 到着表示(dwell)。定刻との差は -バイアス で固定表示
+    if(liveArrivedIdx!==targetIndex){ liveArrivedIdx=targetIndex; liveDwellEnd=now+LIVE_DWELL_MS; }
+    const remAt=(schedT-arriveT)/1000;         // = -simOffset
+    let state;
+    if(isLast) state='terminal';
+    else if(targetIndex===0 && remAt>EARLY_GRACE) state='waiting';   // 始発を早発バイアスで待機表示
+    else state = remAt>EARLY_GRACE ? 'early' : 'ok';                 // 早発 or 正常/遅れ
+    render({state, stop, remainingSec:remAt, d:0});
+    if(isLast){ liveStop(); return; }                                // 終点で自動停止
+    if(now>=liveDwellEnd){                                           // dwell終了 → 出発して次停へ
+      targetIndex++; liveArrivedIdx=-1; liveSpokenIdx=-1;
+      liveWall0=now; liveSched0=arriveT;                            // 出発時刻(=到着時刻)から仮想時計を継続
+    }
   }
   $('liveBtn').addEventListener('click', ()=>{ if(liveRunning()) liveStop(); else liveStart(); });
-  $('liveSpeed').addEventListener('change', ()=>{
-    if(liveRunning()){ const effNow=liveSched0+(Date.now()-liveWall0)*liveSpeed; liveSpeed=parseInt($('liveSpeed').value,10)||1; liveWall0=Date.now(); liveSched0=effNow; }
-  });
+  $('liveSpeed').addEventListener('change', ()=>{ if(liveRunning()){ liveReanchor(); liveSpeed=parseInt($('liveSpeed').value,10)||1; } });
 
   // ---- ③ 音量(大/中/小/消 の4段) ----
   function updateVolBtn(){ $('volBtn').textContent = VOL_LABEL[volLevel]; }
