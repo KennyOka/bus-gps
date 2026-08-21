@@ -19,7 +19,8 @@
     --sans:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans','Noto Sans JP',sans-serif;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-  html,body{margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); overscroll-behavior-y:none;}
+  html,body{margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); overscroll-behavior-y:none; touch-action:manipulation;}
+  button, select, .rdot, .controls{ touch-action:manipulation; }   /* ダブルタップ拡大を無効化 */
   /* 自然フロー+ページスクロール。下部の副操作は画面外にはみ出してよい */
   body{min-height:100dvh; transition:background .3s ease;
        padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom);}
