@@ -151,6 +151,7 @@
   .controls button{ flex:1; padding:14px 6px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:14px; font-weight:700; white-space:nowrap; }
   .controls .adv{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
   .controls.secondary button{ font-size:13px; font-weight:600; padding:12px 6px; }
+  .controls button.off{ opacity:.45; }
   .radius-sel{ flex:1; background:var(--panel); border:1px solid var(--line); color:var(--ink); border-radius:10px; padding:12px 6px; font-size:14px; font-family:var(--sans); text-align:center; }
   .sim{ display:flex; flex-direction:column; gap:8px; width:100%; padding:6px 16px 4px; }
   .sim-line{ display:flex; align-items:center; gap:10px; }
@@ -256,6 +257,7 @@
         <button id="modeBtn">デモ</button>
         <select id="radius" class="radius-sel"></select>
         <button id="volBtn">🔊大</button>
+        <button id="nameBtn">🗣停名</button>
         <button id="correctBtn">📍補正</button>
       </div>
       <div class="sim" id="simRow" style="display:none;">
@@ -326,6 +328,7 @@
   // ③ 音量: 0=大,1=中,2=小,3=消
   const VOL=[1.0,0.55,0.28,0], VOL_LABEL=['🔊大','🔉中','🔈小','🔇消'];
   let volLevel = Math.min(3, Math.max(0, parseInt(lsGet('mon_vol')||'0',10)));
+  let nameSpeech = lsGet('mon_name_speech')!=='0';   // バス停名の読み上げ(既定ON)
 
   // ---- 音声(iOS Safari: ユーザー操作でunlock) ----
   function loadVoices(){ try{ jaVoices = window.speechSynthesis.getVoices().filter(v=>/ja|JP/i.test(v.lang)); }catch(e){} }
@@ -337,6 +340,7 @@
       u.rate=1.0; u.volume=vol; window.speechSynthesis.speak(u);
     }catch(e){}
   }
+  function speakStop(text){ if(nameSpeech) speak(text); }   // バス停名読み上げ(ON時のみ)
   const yomi = s => (s && (s.kana || s.name)) || '';   // ⑦ 発音はkana優先
   try{ window.speechSynthesis.onvoiceschanged=loadVoices; loadVoices(); }catch(e){}
 
@@ -483,7 +487,7 @@
         if(isLast) return { state:'terminal', stop, remainingSec, d };  // 終点からは進めない
         const nextStop = stops[targetIndex+1];   // 発車=半径を外れた → 次を案内
         advance();
-        if(nextStop){ speak((targetIndex===stops.length-1 ? '次は終点、' : '次は、') + yomi(nextStop) + 'です'); }  // ④/⑦
+        if(nextStop){ speakStop((targetIndex===stops.length-1 ? '次は終点、' : '次は、') + yomi(nextStop) + 'です'); }  // ④/⑦
         if(targetIndex>=stops.length) return {state:'finished'};
         return evaluate(lat,lng,now);
       }
@@ -744,7 +748,7 @@
 
     // まだ到着していない → 走行中(定刻との差をカウント)
     if(liveArrivedIdx!==targetIndex && effNow < arriveT){
-      if(liveSpokenIdx!==targetIndex){ liveSpokenIdx=targetIndex; speak((isLast?'次は終点、':'次は、')+yomi(stop)+'です'); }
+      if(liveSpokenIdx!==targetIndex){ liveSpokenIdx=targetIndex; speakStop((isLast?'次は終点、':'次は、')+yomi(stop)+'です'); }
       render({state:'approaching', stop, remainingSec:(schedT-effNow)/1000, d:null});
       return;
     }
@@ -772,6 +776,14 @@
     if(VOL[volLevel]>0){ primeAudio(); speak('音量'+['大','中','小'][volLevel]); }
   });
   updateVolBtn();
+
+  // ---- バス停名の読み上げ ON/OFF ----
+  function updateNameBtn(){ const b=$('nameBtn'); b.textContent=(nameSpeech?'🗣':'🔇')+'停名'; b.classList.toggle('off',!nameSpeech); }
+  $('nameBtn').addEventListener('click', ()=>{
+    nameSpeech=!nameSpeech; lsSet('mon_name_speech', nameSpeech?'1':'0'); updateNameBtn();
+    if(nameSpeech){ primeAudio(); speak('停留所名の読み上げオン'); }
+  });
+  updateNameBtn();
 
   // ---- 判定半径プルダウン(5m刻み・既定20m・localStorage保存) ----
   (function initRadius(){
