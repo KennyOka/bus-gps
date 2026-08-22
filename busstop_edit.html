@@ -56,6 +56,11 @@
   .d-k{ font-size:13px; color:var(--ink-dim); }
   .d-v{ font-size:16px; font-weight:700; font-family:var(--mono); text-align:right; }
   .d-v.na{ color:var(--warn); font-family:var(--sans); }
+  .d-v.chg{ color:var(--accent); }
+  .fld{ margin-top:14px; }
+  .fld label{ display:block; font-size:13px; color:var(--ink-dim); margin-bottom:6px; }
+  .fld input{ width:100%; background:var(--panel); border:1px solid var(--line); color:var(--ink); border-radius:10px; padding:12px; font-size:18px; }
+  a.btn.dis{ pointer-events:none; }
   .d-actions{ display:flex; flex-direction:column; gap:10px; margin-top:16px; }
   .btn{ display:block; text-align:center; text-decoration:none; padding:14px; border-radius:11px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:15px; font-weight:700; }
   .btn.pri{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
@@ -93,6 +98,7 @@
 <script>
 (function(){
   const API_BASE = (location.origin === 'https://tokyoknock.com') ? 'api/' : 'https://tokyoknock.com/bus/api/';
+  const CORRECT_SECRET = 'shimabus-fix-2026';   // update_busstops.php の SECRET と一致
   const $ = id => document.getElementById(id);
 
   let stops = [];          // 全バス停
@@ -100,6 +106,7 @@
   let curRow = 'あ';       // 五十音の選択行
   let hereList = [];       // いまここの近傍結果
   let current = null;      // 詳細対象
+  let pendLat = null, pendLng = null, pendAcc = null, saving = false;   // 編集中の座標(GPS取得値)
 
   const ROWS = ['あ','か','さ','た','な','は','ま','や','ら','わ','他'];
 
@@ -222,26 +229,76 @@
     }, e=> toast('現在地の取得に失敗: '+e.message), {enableHighAccuracy:true, timeout:15000, maximumAge:0});
   }
 
-  // ---- 詳細 ----
+  // ---- 詳細(編集) ----
   const DIR={1:'上り',2:'下り',9:'その他'};
   function openDetail(st){
-    current=st;
-    const gmap = st.has_coord ? `https://www.google.com/maps/search/?api=1&query=${st.lat},${st.lng}` : null;
+    current=st; pendLat=st.lat; pendLng=st.lng; pendAcc=null; saving=false;
     $('detailArea').innerHTML =
-      `<div class="d-name">${esc(st.name||'—')}</div>`+
-      `<div class="d-kana">${esc(st.kana||'（フリガナ未登録）')}</div>`+
+      `<div class="d-name">${esc(st.name||'—')}<span class="dir">${dirTag(st.direction)}</span></div>`+
       `<div class="d-card">`+
         `<div class="d-row"><span class="d-k">バス停ID</span><span class="d-v">${st.busstop_id}</span></div>`+
         `<div class="d-row"><span class="d-k">方向</span><span class="d-v">${DIR[st.direction]||'—'}</span></div>`+
-        `<div class="d-row"><span class="d-k">緯度</span><span class="d-v ${st.has_coord?'':'na'}">${st.has_coord?st.lat.toFixed(6):'未登録'}</span></div>`+
-        `<div class="d-row"><span class="d-k">経度</span><span class="d-v ${st.has_coord?'':'na'}">${st.has_coord?st.lng.toFixed(6):'未登録'}</span></div>`+
+      `</div>`+
+      `<div class="fld"><label>フリガナ</label><input type="text" id="editKana" value="${esc(st.kana||'')}" placeholder="ひらがな/カタカナ" autocomplete="off"></div>`+
+      `<div class="d-card" style="margin-top:12px;">`+
+        `<div class="d-row"><span class="d-k">緯度</span><span class="d-v" id="dispLat"></span></div>`+
+        `<div class="d-row"><span class="d-k">経度</span><span class="d-v" id="dispLng"></span></div>`+
+        `<div class="d-row" id="rowAcc" style="display:none;"><span class="d-k">GPS精度</span><span class="d-v" id="dispAcc"></span></div>`+
       `</div>`+
       `<div class="d-actions">`+
-        (gmap ? `<a class="btn pri" href="${gmap}" target="_blank" rel="noopener">🗺 Googleマップで開く</a>` : `<div class="btn dis">🗺 座標未登録（地図なし）</div>`)+
-        `<div class="btn dis">✏️ フリガナ・座標の修正（次段で実装）</div>`+
+        `<button class="btn" id="gpsSet">📍 現在地(GPS)で座標を設定</button>`+
+        `<a class="btn" id="gmapLink" target="_blank" rel="noopener">🗺 Googleマップで開く</a>`+
+        `<button class="btn pri" id="saveBtn">💾 保存（DBへ反映）</button>`+
       `</div>`+
-      `<div class="note">この画面は表示のみです。<br>次のステップで「フリガナ編集」「現在地(GPS)で座標設定」「地図ピンのドラッグ修正」を追加し、保存でDB（ドラサポと共通）へ反映します。</div>`;
+      `<div class="note">座標は「現在地(GPS)で設定」で更新します（現地でバス停の前に立って取得）。地図ピンのドラッグ修正は次のステップで追加します。保存はドラサポと共通のDBへ反映されます。</div>`;
+    refreshCoordDisp();
+    $('gpsSet').addEventListener('click', gpsSetCoord);
+    $('saveBtn').addEventListener('click', saveEdit);
     show('scDetail'); $('detailArea').scrollTop=0;
+  }
+  function refreshCoordDisp(){
+    const has = pendLat!=null && pendLng!=null;
+    const changed = has && (pendLat!==current.lat || pendLng!==current.lng);
+    $('dispLat').textContent = has ? pendLat.toFixed(6) : '未登録';
+    $('dispLng').textContent = has ? pendLng.toFixed(6) : '未登録';
+    $('dispLat').className = 'd-v' + (has?'':' na') + (changed?' chg':'');
+    $('dispLng').className = 'd-v' + (has?'':' na') + (changed?' chg':'');
+    if(pendAcc!=null){ $('rowAcc').style.display='flex'; $('dispAcc').textContent='±'+Math.round(pendAcc)+'m'+(changed?'（新規取得）':''); }
+    else { $('rowAcc').style.display='none'; }
+    const link=$('gmapLink');
+    if(has){ link.classList.remove('dis'); link.href=`https://www.google.com/maps/search/?api=1&query=${pendLat},${pendLng}`; }
+    else { link.classList.add('dis'); link.removeAttribute('href'); }
+  }
+  function gpsSetCoord(){
+    if(!navigator.geolocation){ toast('この端末はGPS非対応です'); return; }
+    toast('現在地を取得中…');
+    navigator.geolocation.getCurrentPosition(p=>{
+      pendLat=+p.coords.latitude.toFixed(6); pendLng=+p.coords.longitude.toFixed(6); pendAcc=p.coords.accuracy;
+      refreshCoordDisp(); toast(`座標を取得しました（±${Math.round(pendAcc)}m）。保存で確定します`);
+    }, e=> toast('現在地の取得に失敗: '+e.message), {enableHighAccuracy:true, timeout:15000, maximumAge:0});
+  }
+  async function saveEdit(){
+    if(saving) return;
+    const newKana = $('editKana').value.trim();
+    const fix = { busstop_id: current.busstop_id };
+    let changed=false;
+    if(newKana !== (current.kana||'')){ fix.kana = newKana; changed=true; }
+    const coordChanged = pendLat!=null && pendLng!=null && (pendLat!==current.lat || pendLng!==current.lng);
+    if(coordChanged){ fix.lat=pendLat; fix.lng=pendLng; changed=true; }
+    if(!changed){ toast('変更がありません'); return; }
+    saving=true; $('saveBtn').textContent='保存中…';
+    try{
+      const r=await fetch(`${API_BASE}update_busstops.php`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({secret:CORRECT_SECRET, fixes:[fix]})});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok && j.updated>=1){
+        if('kana' in fix){ current.kana=fix.kana; }
+        if(coordChanged){ current.lat=pendLat; current.lng=pendLng; current.has_coord=true; }
+        toast('保存しました（DBへ反映）'); refreshCoordDisp(); render();
+      } else {
+        toast('保存に失敗: '+((j&&j.error)||('HTTP '+r.status)));
+      }
+    }catch(e){ toast('通信に失敗しました: '+e.message); }
+    saving=false; $('saveBtn').textContent='💾 保存（DBへ反映）';
   }
   $('backBtn').addEventListener('click', ()=> show('scList'));
 
