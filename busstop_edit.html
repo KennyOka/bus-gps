@@ -1,0 +1,251 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="バス停エディタ">
+<title>バス停エディタ</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#171b22; --panel-2:#1e232c; --line:#2a303a;
+    --ink:#f2f5f8; --ink-dim:#9aa4b2; --ink-faint:#6b7686;
+    --accent:#4da3ff; --ok:#37c871; --warn:#f4b740; --danger:#ef5350;
+    --sans:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); overscroll-behavior-y:none; touch-action:manipulation; }
+  button, select, input{ touch-action:manipulation; font-family:var(--sans); }
+  .screen{ display:none; min-height:100vh; flex-direction:column; }
+  .screen.active{ display:flex; }
+
+  .topbar{ display:flex; justify-content:space-between; align-items:center; padding:10px 14px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5; }
+  .title{ font-size:17px; font-weight:800; }
+  .clock{ font-family:var(--mono); font-size:13px; color:var(--ink-dim); }
+
+  .searchwrap{ padding:10px 12px 6px; }
+  .searchwrap input{ width:100%; background:var(--panel); border:1px solid var(--line); color:var(--ink); border-radius:10px; padding:12px 12px; font-size:16px; }
+  .modebar{ display:flex; gap:8px; padding:4px 12px 8px; }
+  .modebar button{ flex:1; padding:10px; border-radius:9px; border:1px solid var(--line); background:var(--panel); color:var(--ink-dim); font-size:14px; font-weight:700; }
+  .modebar button.active{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
+
+  .rowsel{ display:flex; flex-wrap:wrap; gap:6px; padding:0 12px 8px; }
+  .rowsel button{ min-width:42px; flex:1; padding:10px 4px; border-radius:8px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:16px; font-weight:700; }
+  .rowsel button.active{ background:var(--accent); color:#04121f; border-color:var(--accent); }
+
+  .listinfo{ padding:2px 16px 6px; font-size:12px; color:var(--ink-faint); }
+  .list{ flex:1; overflow-y:auto; padding:0 12px 20px; }
+  .item{ width:100%; text-align:left; display:flex; align-items:center; gap:10px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:11px 12px; margin-bottom:8px; color:var(--ink); }
+  .item .nm{ flex:1; min-width:0; }
+  .item .nm .n{ font-size:16px; font-weight:700; line-height:1.25; }
+  .item .nm .k{ font-size:12px; color:var(--ink-dim); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .badge{ font-size:11px; font-weight:700; padding:3px 8px; border-radius:20px; white-space:nowrap; }
+  .badge.ok{ background:rgba(55,200,113,.15); color:var(--ok); }
+  .badge.no{ background:rgba(244,183,64,.15); color:var(--warn); }
+  .badge.dist{ background:var(--panel-2); color:var(--ink-dim); font-family:var(--mono); }
+  .empty{ text-align:center; color:var(--ink-faint); padding:30px 12px; }
+
+  /* 詳細 */
+  .detail{ flex:1; overflow-y:auto; padding:14px 14px 24px; }
+  .d-name{ font-size:24px; font-weight:800; line-height:1.2; }
+  .d-kana{ font-size:15px; color:var(--ink-dim); margin-top:4px; }
+  .d-card{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-top:14px; }
+  .d-row{ display:flex; justify-content:space-between; align-items:baseline; padding:7px 0; border-bottom:1px solid var(--line); }
+  .d-row:last-child{ border-bottom:none; }
+  .d-k{ font-size:13px; color:var(--ink-dim); }
+  .d-v{ font-size:16px; font-weight:700; font-family:var(--mono); text-align:right; }
+  .d-v.na{ color:var(--warn); font-family:var(--sans); }
+  .d-actions{ display:flex; flex-direction:column; gap:10px; margin-top:16px; }
+  .btn{ display:block; text-align:center; text-decoration:none; padding:14px; border-radius:11px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:15px; font-weight:700; }
+  .btn.pri{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
+  .btn.dis{ opacity:.5; }
+  .note{ font-size:12px; color:var(--ink-faint); margin-top:12px; line-height:1.6; }
+  .controls{ display:flex; gap:8px; padding:10px 12px; border-top:1px solid var(--line); }
+  .controls button{ flex:1; padding:14px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:15px; font-weight:700; }
+
+  .toast{ position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(20px); background:#000; color:#fff; padding:10px 16px; border-radius:20px; font-size:14px; opacity:0; transition:.25s; pointer-events:none; z-index:50; max-width:90%; text-align:center; }
+  .toast.show{ opacity:.95; transform:translateX(-50%) translateY(0); }
+</style>
+
+<!-- ===== 一覧/検索/いまここ ===== -->
+<div class="screen active" id="scList">
+  <div class="topbar"><div class="title">🚏 バス停エディタ</div><div class="clock" id="clock">--:--:--</div></div>
+  <div class="searchwrap"><input type="search" id="searchBox" placeholder="漢字・フリガナで検索（曖昧）" autocomplete="off" inputmode="search"></div>
+  <div class="modebar">
+    <button id="modeAiu" class="active">五十音</button>
+    <button id="modeHere">いまここ</button>
+  </div>
+  <div class="rowsel" id="rowSel"></div>
+  <div class="listinfo" id="listInfo">読み込み中…</div>
+  <div class="list" id="listArea"></div>
+</div>
+
+<!-- ===== 詳細 ===== -->
+<div class="screen" id="scDetail">
+  <div class="topbar"><div class="title">バス停 詳細</div><div class="clock" id="clock2">--:--:--</div></div>
+  <div class="detail" id="detailArea"></div>
+  <div class="controls"><button id="backBtn">← 一覧へ戻る</button></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  const API_BASE = (location.origin === 'https://tokyoknock.com') ? 'api/' : 'https://tokyoknock.com/bus/api/';
+  const $ = id => document.getElementById(id);
+
+  let stops = [];          // 全バス停
+  let mode = 'aiu';        // 'aiu' | 'here'
+  let curRow = 'あ';       // 五十音の選択行
+  let hereList = [];       // いまここの近傍結果
+  let current = null;      // 詳細対象
+
+  const ROWS = ['あ','か','さ','た','な','は','ま','や','ら','わ','他'];
+
+  // ---- 時計 ----
+  function tickClock(){ const t=new Date().toLocaleTimeString('ja-JP',{hour12:false}); $('clock').textContent=t; const c2=$('clock2'); if(c2)c2.textContent=t; }
+  setInterval(tickClock,1000); tickClock();
+
+  let toastT=null;
+  function toast(m){ const el=$('toast'); el.textContent=m; el.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('show'),2400); }
+  function show(id){ ['scList','scDetail'].forEach(s=>$(s).classList.toggle('active', s===id)); }
+
+  // ---- カナ正規化 ----
+  function kataToHira(s){ return (s||'').replace(/[ァ-ヶ]/g, c=>String.fromCharCode(c.charCodeAt(0)-0x60)); }
+  const SMALL={'ぁ':'あ','ぃ':'い','ぅ':'う','ぇ':'え','ぉ':'お','ゃ':'や','ゅ':'ゆ','ょ':'よ','っ':'つ','ゎ':'わ','ゕ':'か','ゖ':'け'};
+  const ROWOF={
+    'あ':'あ','い':'あ','う':'あ','え':'あ','お':'あ',
+    'か':'か','き':'か','く':'か','け':'か','こ':'か',
+    'さ':'さ','し':'さ','す':'さ','せ':'さ','そ':'さ',
+    'た':'た','ち':'た','つ':'た','て':'た','と':'た',
+    'な':'な','に':'な','ぬ':'な','ね':'な','の':'な',
+    'は':'は','ひ':'は','ふ':'は','へ':'は','ほ':'は',
+    'ま':'ま','み':'ま','む':'ま','め':'ま','も':'ま',
+    'や':'や','ゆ':'や','よ':'や',
+    'ら':'ら','り':'ら','る':'ら','れ':'ら','ろ':'ら',
+    'わ':'わ','を':'わ','ん':'わ'
+  };
+  function rowOf(kana){
+    if(!kana) return '他';
+    let c = kataToHira(kana.trim()).normalize('NFD')[0] || '';
+    c = SMALL[c] || c;
+    return ROWOF[c] || '他';
+  }
+  function normSearch(s){ return kataToHira((s||'').normalize('NFKC')).replace(/\s+/g,'').toLowerCase(); }
+  function sortKey(st){ return kataToHira(st.kana||'') || ('￿'+(st.name||'')); }   // カナ無しは末尾
+
+  // ---- データ取得(admin優先・無ければ busstops.php にフォールバック) ----
+  async function load(){
+    $('listInfo').textContent='読み込み中…';
+    let data=null;
+    try{
+      const r=await fetch(`${API_BASE}busstops_admin.php?_=${Date.now()}`,{cache:'no-store'});
+      if(r.ok) data=await r.json();
+    }catch(e){}
+    if(!data || !data.stops){
+      try{
+        const r2=await fetch(`${API_BASE}busstops.php?_=${Date.now()}`,{cache:'no-store'});
+        if(r2.ok){ data=await r2.json(); if(data.stops) data.stops.forEach(s=>{ s.has_coord=(s.lat!=null&&s.lng!=null); }); }
+      }catch(e){}
+    }
+    if(!data || !data.stops){ $('listInfo').textContent='データの取得に失敗しました'; return; }
+    stops = data.stops;
+    render();
+  }
+
+  // ---- 距離(Haversine, m) ----
+  function distM(la1,lo1,la2,lo2){ const R=6371000,r=Math.PI/180; const dla=(la2-la1)*r,dlo=(lo2-lo1)*r; const a=Math.sin(dla/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin(dlo/2)**2; return 2*R*Math.asin(Math.sqrt(a)); }
+  function fmtDist(m){ return m>=1000 ? (m/1000).toFixed(m>=10000?0:1)+'km' : Math.round(m)+'m'; }
+
+  // ---- 描画 ----
+  function itemEl(st, distText){
+    const b=document.createElement('button'); b.className='item';
+    const badge = distText ? `<span class="badge dist">${distText}</span>`
+                : (st.has_coord ? '<span class="badge ok">📍座標あり</span>' : '<span class="badge no">⚠未登録</span>');
+    b.innerHTML = `<div class="nm"><div class="n">${esc(st.name||'—')}</div><div class="k">${esc(st.kana||'（カナ未登録）')}</div></div>${badge}`;
+    b.addEventListener('click', ()=>openDetail(st));
+    return b;
+  }
+  function esc(s){ return (s+'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  function render(){
+    const q = normSearch($('searchBox').value);
+    $('rowSel').style.display = (mode==='aiu' && !q) ? 'flex' : 'none';
+    const area=$('listArea'); area.innerHTML='';
+
+    if(q){   // 検索モード(曖昧)
+      const res = stops.filter(s=> normSearch(s.name).includes(q) || normSearch(s.kana).includes(q))
+                       .sort((a,b)=> sortKey(a).localeCompare(sortKey(b),'ja'));
+      $('listInfo').textContent = `検索「${$('searchBox').value.trim()}」: ${res.length}件`;
+      if(!res.length){ area.innerHTML='<div class="empty">該当なし</div>'; return; }
+      res.slice(0,300).forEach(s=> area.appendChild(itemEl(s)));
+      return;
+    }
+    if(mode==='here'){
+      $('listInfo').textContent = hereList.length ? `現在地から近い順 ${hereList.length}件` : '「いまここ」で現在地を取得してください';
+      if(!hereList.length){
+        const b=document.createElement('button'); b.className='btn pri'; b.textContent='📍 現在地を取得して近くのバス停を探す';
+        b.addEventListener('click', getHere); area.appendChild(b);
+        return;
+      }
+      const b=document.createElement('button'); b.className='btn'; b.textContent='📍 現在地を取り直す'; b.style.marginBottom='10px';
+      b.addEventListener('click', getHere); area.appendChild(b);
+      hereList.forEach(x=> area.appendChild(itemEl(x.st, fmtDist(x.d))));
+      return;
+    }
+    // 五十音
+    renderRowSel();
+    const res = stops.filter(s=> rowOf(s.kana)===curRow).sort((a,b)=> sortKey(a).localeCompare(sortKey(b),'ja'));
+    $('listInfo').textContent = `${curRow}行: ${res.length}件`;
+    if(!res.length){ area.innerHTML='<div class="empty">この行のバス停はありません</div>'; return; }
+    res.forEach(s=> area.appendChild(itemEl(s)));
+  }
+
+  function renderRowSel(){
+    const sel=$('rowSel'); sel.innerHTML='';
+    ROWS.forEach(r=>{ const b=document.createElement('button'); b.textContent=r; if(r===curRow) b.classList.add('active');
+      b.addEventListener('click', ()=>{ curRow=r; render(); $('listArea').scrollTop=0; }); sel.appendChild(b); });
+  }
+
+  function getHere(){
+    if(!navigator.geolocation){ toast('この端末はGPS非対応です'); return; }
+    toast('現在地を取得中…');
+    navigator.geolocation.getCurrentPosition(p=>{
+      const la=p.coords.latitude, lo=p.coords.longitude;
+      hereList = stops.filter(s=>s.has_coord).map(s=>({st:s, d:distM(la,lo,s.lat,s.lng)}))
+                      .sort((a,b)=>a.d-b.d).slice(0,30);
+      toast(`現在地取得(±${Math.round(p.coords.accuracy)}m)`);
+      render();
+    }, e=> toast('現在地の取得に失敗: '+e.message), {enableHighAccuracy:true, timeout:15000, maximumAge:0});
+  }
+
+  // ---- 詳細 ----
+  const DIR={1:'上り',2:'下り',9:'その他'};
+  function openDetail(st){
+    current=st;
+    const gmap = st.has_coord ? `https://www.google.com/maps/search/?api=1&query=${st.lat},${st.lng}` : null;
+    $('detailArea').innerHTML =
+      `<div class="d-name">${esc(st.name||'—')}</div>`+
+      `<div class="d-kana">${esc(st.kana||'（フリガナ未登録）')}</div>`+
+      `<div class="d-card">`+
+        `<div class="d-row"><span class="d-k">バス停ID</span><span class="d-v">${st.busstop_id}</span></div>`+
+        `<div class="d-row"><span class="d-k">方向</span><span class="d-v">${DIR[st.direction]||'—'}</span></div>`+
+        `<div class="d-row"><span class="d-k">緯度</span><span class="d-v ${st.has_coord?'':'na'}">${st.has_coord?st.lat.toFixed(6):'未登録'}</span></div>`+
+        `<div class="d-row"><span class="d-k">経度</span><span class="d-v ${st.has_coord?'':'na'}">${st.has_coord?st.lng.toFixed(6):'未登録'}</span></div>`+
+      `</div>`+
+      `<div class="d-actions">`+
+        (gmap ? `<a class="btn pri" href="${gmap}" target="_blank" rel="noopener">🗺 Googleマップで開く</a>` : `<div class="btn dis">🗺 座標未登録（地図なし）</div>`)+
+        `<div class="btn dis">✏️ フリガナ・座標の修正（次段で実装）</div>`+
+      `</div>`+
+      `<div class="note">この画面は表示のみです。<br>次のステップで「フリガナ編集」「現在地(GPS)で座標設定」「地図ピンのドラッグ修正」を追加し、保存でDB（ドラサポと共通）へ反映します。</div>`;
+    show('scDetail'); $('detailArea').scrollTop=0;
+  }
+  $('backBtn').addEventListener('click', ()=> show('scList'));
+
+  // ---- モード切替・検索 ----
+  $('modeAiu').addEventListener('click', ()=>{ mode='aiu'; $('modeAiu').classList.add('active'); $('modeHere').classList.remove('active'); render(); });
+  $('modeHere').addEventListener('click', ()=>{ mode='here'; $('modeHere').classList.add('active'); $('modeAiu').classList.remove('active'); render(); });
+  let sT=null; $('searchBox').addEventListener('input', ()=>{ clearTimeout(sT); sT=setTimeout(render, 150); });
+
+  load();
+})();
+</script>
