@@ -20,6 +20,8 @@
 
   .topbar{ display:flex; justify-content:space-between; align-items:center; padding:10px 14px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5; }
   .title{ font-size:17px; font-weight:800; }
+  .tcount{ font-size:13px; font-weight:600; color:var(--ink-dim); margin-left:4px; }
+  .item .nm .n .dir{ font-size:12px; font-weight:600; color:var(--ink-faint); margin-left:4px; }
   .clock{ font-family:var(--mono); font-size:13px; color:var(--ink-dim); }
 
   .searchwrap{ padding:10px 12px 6px; }
@@ -68,7 +70,7 @@
 
 <!-- ===== 一覧/検索/いまここ ===== -->
 <div class="screen active" id="scList">
-  <div class="topbar"><div class="title">🚏 バス停エディタ</div><div class="clock" id="clock">--:--:--</div></div>
+  <div class="topbar"><div class="title">🚏 バス停エディタ<span class="tcount" id="stopCount"></span></div><div class="clock" id="clock">--:--:--</div></div>
   <div class="searchwrap"><input type="search" id="searchBox" placeholder="漢字・フリガナで検索（曖昧）" autocomplete="off" inputmode="search"></div>
   <div class="modebar">
     <button id="modeAiu" class="active">五十音</button>
@@ -131,6 +133,7 @@
     return ROWOF[c] || '他';
   }
   function normSearch(s){ return kataToHira((s||'').normalize('NFKC')).replace(/\s+/g,'').toLowerCase(); }
+  function dirTag(d){ return d===1?'（上り）':d===2?'（下り）':d===9?'（他）':''; }
   function sortKey(st){ return kataToHira(st.kana||'') || ('￿'+(st.name||'')); }   // カナ無しは末尾
 
   // ---- データ取得(admin優先・無ければ busstops.php にフォールバック) ----
@@ -149,6 +152,7 @@
     }
     if(!data || !data.stops){ $('listInfo').textContent='データの取得に失敗しました'; return; }
     stops = data.stops;
+    $('stopCount').textContent = `（${stops.length}件）`;
     render();
   }
 
@@ -161,7 +165,7 @@
     const b=document.createElement('button'); b.className='item';
     const badge = distText ? `<span class="badge dist">${distText}</span>`
                 : (st.has_coord ? '<span class="badge ok">📍座標あり</span>' : '<span class="badge no">⚠未登録</span>');
-    b.innerHTML = `<div class="nm"><div class="n">${esc(st.name||'—')}</div><div class="k">${esc(st.kana||'（カナ未登録）')}</div></div>${badge}`;
+    b.innerHTML = `<div class="nm"><div class="n">${esc(st.name||'—')}<span class="dir">${dirTag(st.direction)}</span></div><div class="k">${esc(st.kana||'（カナ未登録）')}</div></div>${badge}`;
     b.addEventListener('click', ()=>openDetail(st));
     return b;
   }
