@@ -61,6 +61,9 @@
   .fld label{ display:block; font-size:13px; color:var(--ink-dim); margin-bottom:6px; }
   .fld input{ width:100%; background:var(--panel); border:1px solid var(--line); color:var(--ink); border-radius:10px; padding:12px; font-size:18px; }
   a.btn.dis{ pointer-events:none; }
+  .mapbox{ width:100%; height:260px; border-radius:12px; overflow:hidden; margin-top:12px; border:1px solid var(--line); background:var(--panel-2); }
+  .mapmsg{ display:flex; align-items:center; justify-content:center; height:100%; padding:16px; text-align:center; font-size:13px; color:var(--ink-faint); line-height:1.6; }
+  .maphint{ font-size:12px; color:var(--ink-faint); margin-top:6px; }
   .d-actions{ display:flex; flex-direction:column; gap:10px; margin-top:16px; }
   .btn{ display:block; text-align:center; text-decoration:none; padding:14px; border-radius:11px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:15px; font-weight:700; }
   .btn.pri{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
@@ -99,7 +102,28 @@
 (function(){
   const API_BASE = (location.origin === 'https://tokyoknock.com') ? 'api/' : 'https://tokyoknock.com/bus/api/';
   const CORRECT_SECRET = 'shimabus-fix-2026';   // update_busstops.php の SECRET と一致
+  // ★Google Maps JS API キー(HTTPリファラ制限を推奨: tokyoknock.com/*, *.github.io/*)。未設定なら地図は無効・GPS編集は可
+  const MAPS_API_KEY = '__PUT_YOUR_GOOGLE_MAPS_API_KEY__';
+  const DEFAULT_CENTER = { lat: 28.377, lng: 129.493 };   // 座標未登録時の初期表示(奄美市名瀬付近)
   const $ = id => document.getElementById(id);
+
+  // ---- Google Maps 遅延ロード ----
+  let mapsReady=false, mapsFailed=false, mapsLoading=null, gmap=null, gmarker=null;
+  function loadMaps(){
+    if(mapsReady) return Promise.resolve(true);
+    if(mapsFailed) return Promise.resolve(false);
+    if(mapsLoading) return mapsLoading;
+    if(!MAPS_API_KEY || MAPS_API_KEY.indexOf('__')===0){ mapsFailed=true; return Promise.resolve(false); }
+    mapsLoading = new Promise(res=>{
+      window.__mapsCb = ()=>{ mapsReady=true; res(true); };
+      const s=document.createElement('script');
+      s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(MAPS_API_KEY)}&callback=__mapsCb&loading=async`;
+      s.async=true; s.defer=true;
+      s.onerror=()=>{ mapsFailed=true; res(false); };
+      document.head.appendChild(s);
+    });
+    return mapsLoading;
+  }
 
   let stops = [];          // 全バス停
   let mode = 'aiu';        // 'aiu' | 'here'
@@ -240,6 +264,8 @@
         `<div class="d-row"><span class="d-k">方向</span><span class="d-v">${DIR[st.direction]||'—'}</span></div>`+
       `</div>`+
       `<div class="fld"><label>フリガナ</label><input type="text" id="editKana" value="${esc(st.kana||'')}" placeholder="ひらがな/カタカナ" autocomplete="off"></div>`+
+      `<div class="mapbox" id="mapBox"><div class="mapmsg">地図を準備中…</div></div>`+
+      `<div class="maphint">地図のピンをドラッグ、または地図をタップで位置を指定できます。</div>`+
       `<div class="d-card" style="margin-top:12px;">`+
         `<div class="d-row"><span class="d-k">緯度</span><span class="d-v" id="dispLat"></span></div>`+
         `<div class="d-row"><span class="d-k">経度</span><span class="d-v" id="dispLng"></span></div>`+
@@ -250,11 +276,12 @@
         `<a class="btn" id="gmapLink" target="_blank" rel="noopener">🗺 Googleマップで開く</a>`+
         `<button class="btn pri" id="saveBtn">💾 保存（DBへ反映）</button>`+
       `</div>`+
-      `<div class="note">座標は「現在地(GPS)で設定」で更新します（現地でバス停の前に立って取得）。地図ピンのドラッグ修正は次のステップで追加します。保存はドラサポと共通のDBへ反映されます。</div>`;
+      `<div class="note">座標は「地図ピンのドラッグ/タップ」または「現在地(GPS)で設定」で更新します。保存はドラサポと共通のDBへ反映されます。</div>`;
     refreshCoordDisp();
     $('gpsSet').addEventListener('click', gpsSetCoord);
     $('saveBtn').addEventListener('click', saveEdit);
     show('scDetail'); $('detailArea').scrollTop=0;
+    initMap();
   }
   function refreshCoordDisp(){
     const has = pendLat!=null && pendLng!=null;
@@ -269,12 +296,29 @@
     if(has){ link.classList.remove('dis'); link.href=`https://www.google.com/maps/search/?api=1&query=${pendLat},${pendLng}`; }
     else { link.classList.add('dis'); link.removeAttribute('href'); }
   }
+  // 地図/GPS から座標を反映
+  function setPend(la,lo,acc){ pendLat=+(+la).toFixed(6); pendLng=+(+lo).toFixed(6); pendAcc=(acc==null?null:acc); refreshCoordDisp(); }
+  async function initMap(){
+    const box=$('mapBox'); if(!box) return;
+    const ok=await loadMaps();
+    if(!ok){ box.innerHTML='<div class="mapmsg">地図を表示できません（APIキー未設定または読込エラー）。<br>座標は「現在地(GPS)で設定」で更新できます。</div>'; return; }
+    if($('detailArea').querySelector('#mapBox')!==box) return;   // 詳細が切替わっていたら中止
+    const has = pendLat!=null && pendLng!=null;
+    const center = has ? {lat:pendLat,lng:pendLng} : DEFAULT_CENTER;
+    box.innerHTML='';
+    gmap=new google.maps.Map(box,{center, zoom: has?17:12, mapTypeControl:false, streetViewControl:false, fullscreenControl:false, gestureHandling:'greedy', clickableIcons:false});
+    gmarker=new google.maps.Marker({position:center, map:gmap, draggable:true});
+    gmarker.addListener('dragend', ()=>{ const p=gmarker.getPosition(); setPend(p.lat(),p.lng(),null); toast('地図で位置を指定しました。保存で確定'); });
+    gmap.addListener('click', e=>{ gmarker.setPosition(e.latLng); setPend(e.latLng.lat(), e.latLng.lng(), null); });
+    if(!has) toast('座標未登録です。地図のピンをドラッグ/タップして位置を指定してください');
+  }
   function gpsSetCoord(){
     if(!navigator.geolocation){ toast('この端末はGPS非対応です'); return; }
     toast('現在地を取得中…');
     navigator.geolocation.getCurrentPosition(p=>{
-      pendLat=+p.coords.latitude.toFixed(6); pendLng=+p.coords.longitude.toFixed(6); pendAcc=p.coords.accuracy;
-      refreshCoordDisp(); toast(`座標を取得しました（±${Math.round(pendAcc)}m）。保存で確定します`);
+      setPend(p.coords.latitude, p.coords.longitude, p.coords.accuracy);
+      if(gmap && gmarker){ const pos={lat:pendLat,lng:pendLng}; gmarker.setPosition(pos); gmap.panTo(pos); gmap.setZoom(18); }
+      toast(`座標を取得しました（±${Math.round(pendAcc)}m）。保存で確定します`);
     }, e=> toast('現在地の取得に失敗: '+e.message), {enableHighAccuracy:true, timeout:15000, maximumAge:0});
   }
   async function saveEdit(){
