@@ -48,6 +48,8 @@
 
   .topbar{ display:flex; justify-content:space-between; align-items:center; padding:10px 14px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5; }
   .title{ font-size:17px; font-weight:800; }
+  #homeTitle{ cursor:pointer; }
+  #homeTitle:active{ opacity:.6; }
   .tcount{ font-size:13px; font-weight:600; color:var(--ink-dim); margin-left:4px; }
   .item .nm .n .dir{ font-size:12px; font-weight:600; color:var(--ink-faint); margin-left:4px; }
   .clock{ font-family:var(--mono); font-size:13px; color:var(--ink-dim); }
@@ -117,7 +119,7 @@
 
 <!-- ===== 一覧/検索/いまここ ===== -->
 <div class="screen active" id="scList">
-  <div class="topbar"><div class="title">🚏 バス停エディタ<span class="tcount" id="stopCount"></span></div><div class="clock" id="clock">--:--:--</div></div>
+  <div class="topbar"><div class="title" id="homeTitle" role="button" title="最初の画面に戻る">🚏 バス停エディタ<span class="tcount" id="stopCount"></span></div><div class="clock" id="clock">--:--:--</div></div>
   <div class="searchwrap"><input type="search" id="searchBox" placeholder="漢字・フリガナで検索（曖昧）" autocomplete="off" inputmode="search"></div>
   <div class="modebar">
     <button id="modeAiu" class="active">五十音</button>
@@ -417,6 +419,13 @@
   $('modeAiu').addEventListener('click', ()=>{ mode='aiu'; $('modeAiu').classList.add('active'); $('modeHere').classList.remove('active'); render(); });
   $('modeHere').addEventListener('click', ()=>{ mode='here'; $('modeHere').classList.add('active'); $('modeAiu').classList.remove('active'); render(); });
   let sT=null; $('searchBox').addEventListener('input', ()=>{ clearTimeout(sT); sT=setTimeout(render, 150); });
+  // 左上タイトルで最初の画面へ(五十音・あ行・検索クリア・先頭)
+  function goHome(){
+    $('searchBox').value=''; mode='aiu'; curRow='あ';
+    $('modeAiu').classList.add('active'); $('modeHere').classList.remove('active');
+    show('scList'); render(); $('listArea').scrollTop=0; try{ window.scrollTo(0,0); }catch(e){}
+  }
+  $('homeTitle').addEventListener('click', goHome);
 
   // ---- オープニング(ドラサポと同様。タップでスタート＋現在地取得) ----
   (function opening(){
