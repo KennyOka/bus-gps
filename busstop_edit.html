@@ -326,6 +326,7 @@
           `<div class="gpsdist"><span class="lb">現在地との差</span><span class="v" id="gpsDistV">—</span></div>`+
         `</div>`+
         `<a class="btn" id="gmapLink" target="_blank" rel="noopener">🗺 Googleマップで開く</a>`+
+        `<a class="btn" id="routeLink" target="_blank" rel="noopener">🚗 経路案内（現在地→ここ・道なり）</a>`+
         `<button class="btn pri" id="saveBtn">💾 保存（DBへ反映）</button>`+
       `</div>`+
       `<div class="note">「現在地との差」は端末の現在地と登録済み座標の距離です。座標は「地図ピンのドラッグ/タップ」または「現在地(GPS)で設定」で更新します。保存はドラサポと共通のDBへ反映されます。</div>`;
@@ -354,6 +355,11 @@
     const link=$('gmapLink');
     if(has){ link.classList.remove('dis'); link.href=`https://www.google.com/maps/search/?api=1&query=${pendLat},${pendLng}`; }
     else { link.classList.add('dis'); link.removeAttribute('href'); }
+    const rt=$('routeLink');   // 現在地→バス停の道なり経路(Googleマップで開く・無料)
+    if(rt){
+      if(has){ rt.classList.remove('dis'); rt.href=`https://www.google.com/maps/dir/?api=1&destination=${pendLat},${pendLng}&travelmode=driving`; }
+      else { rt.classList.add('dis'); rt.removeAttribute('href'); }
+    }
   }
   // 地図/GPS から座標を反映
   function setPend(la,lo,acc){ pendLat=+(+la).toFixed(6); pendLng=+(+lo).toFixed(6); pendAcc=(acc==null?null:acc); refreshCoordDisp(); }
