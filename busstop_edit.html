@@ -71,7 +71,7 @@
   .badge{ font-size:11px; font-weight:700; padding:3px 8px; border-radius:20px; white-space:nowrap; }
   .badge.ok{ background:rgba(55,200,113,.15); color:var(--ok); }
   .badge.no{ background:rgba(244,183,64,.15); color:var(--warn); }
-  .badge.dist{ background:var(--panel-2); color:var(--ink-dim); font-family:var(--mono); }
+  .badge.dist{ background:var(--panel-2); color:var(--ink); font-family:var(--mono); font-size:16px; font-weight:800; letter-spacing:.3px; padding:5px 10px; }
   .empty{ text-align:center; color:var(--ink-faint); padding:30px 12px; }
 
   /* 詳細 */
@@ -296,7 +296,7 @@
       const la=p.coords.latitude, lo=p.coords.longitude;
       myPos={lat:la, lng:lo, acc:p.coords.accuracy};
       hereList = stops.filter(s=>s.has_coord).map(s=>({st:s, d:distM(la,lo,s.lat,s.lng)}))
-                      .sort((a,b)=>a.d-b.d).slice(0,30);
+                      .sort((a,b)=>a.d-b.d).slice(0,10);
       toast(`現在地取得(±${Math.round(p.coords.accuracy)}m)`);
       render();
     }, e=> toast('現在地の取得に失敗: '+e.message), {enableHighAccuracy:true, timeout:15000, maximumAge:0});
