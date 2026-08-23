@@ -15,8 +15,36 @@
   *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body{ margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); overscroll-behavior-y:none; touch-action:manipulation; }
   button, select, input{ touch-action:manipulation; font-family:var(--sans); }
+  /* オープニング(ドラサポと同様) */
+  #splash{ position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 50% 38%, #143a72, #0a1020 72%); overflow:hidden; }
+  #splash.hide{ opacity:0; visibility:hidden; transition:opacity .5s ease, visibility .5s; }
+  #splash.play::before{ content:""; position:absolute; top:-60%; left:-30%; width:60%; height:220%;
+    background:linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent); transform:rotate(18deg);
+    animation:sweep 1.4s ease-in-out .3s; }
+  @keyframes sweep{ 0%{ left:-40%; } 100%{ left:120%; } }
+  .splash-inner{ text-align:center; }
+  .splash-logo{ font-size:76px; opacity:0; }
+  .splash-title{ font-size:44px; font-weight:900; letter-spacing:.08em; margin-top:4px;
+    background:linear-gradient(90deg,#fff,#8fd0ff,#fff); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:#fff; opacity:0; }
+  .splash-sub{ font-size:14px; color:#9fb6d8; margin-top:10px; letter-spacing:.14em; opacity:0; }
+  .splash-hint{ margin-top:28px; font-size:15px; color:#cfe0f5; letter-spacing:.06em; animation:hintPulse 1.2s ease-in-out infinite; }
+  .splash-copy{ position:absolute; left:0; right:0; bottom:calc(env(safe-area-inset-bottom) + 22px); text-align:center; font-size:11px; color:#7f97b8; letter-spacing:.03em; }
+  #splash.play .splash-logo{ animation:logoIn 1s cubic-bezier(.2,1.4,.35,1) both; }
+  #splash.play .splash-title{ animation:titleIn .8s .35s both; }
+  #splash.play .splash-sub{ animation:titleIn .8s .6s both; }
+  #splash.play .splash-hint{ display:none; }
+  @keyframes hintPulse{ 0%,100%{ opacity:.4; } 50%{ opacity:1; } }
+  @keyframes logoIn{ 0%{ transform:scale(.2) rotate(-25deg); opacity:0; } 100%{ transform:scale(1) rotate(0); opacity:1; } }
+  @keyframes titleIn{ 0%{ transform:translateY(14px); opacity:0; } 100%{ transform:translateY(0); opacity:1; } }
+
   .screen{ display:none; min-height:100vh; flex-direction:column; }
   .screen.active{ display:flex; }
+  .gpsrow{ display:flex; gap:10px; align-items:stretch; }
+  .gpsrow .btn{ flex:1; }
+  .gpsdist{ display:flex; flex-direction:column; align-items:center; justify-content:center; min-width:96px; padding:6px 10px; border:1px solid var(--line); border-radius:11px; background:var(--panel); text-align:center; }
+  .gpsdist .lb{ font-size:10px; color:var(--ink-faint); }
+  .gpsdist .v{ font-family:var(--mono); font-size:16px; font-weight:800; color:var(--ink); }
 
   .topbar{ display:flex; justify-content:space-between; align-items:center; padding:10px 14px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5; }
   .title{ font-size:17px; font-weight:800; }
@@ -76,6 +104,17 @@
   .toast.show{ opacity:.95; transform:translateX(-50%) translateY(0); }
 </style>
 
+<!-- ===== オープニング ===== -->
+<div id="splash">
+  <div class="splash-inner">
+    <div class="splash-logo">🚏</div>
+    <div class="splash-title">バス停エディタ</div>
+    <div class="splash-sub">しまバス バス停 座標・フリガナ 編集</div>
+    <div class="splash-hint" id="splashHint">画面をタップしてスタート</div>
+  </div>
+  <div class="splash-copy">©2026 Hillsfactory　Powered by Claude</div>
+</div>
+
 <!-- ===== 一覧/検索/いまここ ===== -->
 <div class="screen active" id="scList">
   <div class="topbar"><div class="title">🚏 バス停エディタ<span class="tcount" id="stopCount"></span></div><div class="clock" id="clock">--:--:--</div></div>
@@ -131,6 +170,14 @@
   let hereList = [];       // いまここの近傍結果
   let current = null;      // 詳細対象
   let pendLat = null, pendLng = null, pendAcc = null, saving = false;   // 編集中の座標(GPS取得値)
+  let regLat = null, regLng = null;   // 詳細を開いた時点の登録座標(DB値)
+  let myPos = null;        // 端末の現在地 {lat,lng,acc}
+  function acquireMyPos(cb){
+    if(!navigator.geolocation){ if(cb)cb(false); return; }
+    navigator.geolocation.getCurrentPosition(p=>{
+      myPos={lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy}; if(cb)cb(true);
+    }, e=>{ if(cb)cb(false); }, {enableHighAccuracy:true, timeout:15000, maximumAge:30000});
+  }
 
   const ROWS = ['あ','か','さ','た','な','は','ま','や','ら','わ','他'];
 
@@ -194,6 +241,7 @@
   // ---- 描画 ----
   function itemEl(st, distText){
     const b=document.createElement('button'); b.className='item';
+    if(!distText && myPos && st.has_coord) distText = fmtDist(distM(myPos.lat,myPos.lng,st.lat,st.lng));   // ② 現在地→登録座標の距離
     const badge = distText ? `<span class="badge dist">${distText}</span>`
                 : (st.has_coord ? '<span class="badge ok">📍座標あり</span>' : '<span class="badge no">⚠未登録</span>');
     b.innerHTML = `<div class="nm"><div class="n">${esc(st.name||'—')}<span class="dir">${dirTag(st.direction)}</span></div><div class="k">${esc(st.kana||'（カナ未登録）')}</div></div>${badge}`;
@@ -246,6 +294,7 @@
     toast('現在地を取得中…');
     navigator.geolocation.getCurrentPosition(p=>{
       const la=p.coords.latitude, lo=p.coords.longitude;
+      myPos={lat:la, lng:lo, acc:p.coords.accuracy};
       hereList = stops.filter(s=>s.has_coord).map(s=>({st:s, d:distM(la,lo,s.lat,s.lng)}))
                       .sort((a,b)=>a.d-b.d).slice(0,30);
       toast(`現在地取得(±${Math.round(p.coords.accuracy)}m)`);
@@ -256,7 +305,7 @@
   // ---- 詳細(編集) ----
   const DIR={1:'上り',2:'下り',9:'その他'};
   function openDetail(st){
-    current=st; pendLat=st.lat; pendLng=st.lng; pendAcc=null; saving=false;
+    current=st; pendLat=st.lat; pendLng=st.lng; regLat=st.lat; regLng=st.lng; pendAcc=null; saving=false;
     $('detailArea').innerHTML =
       `<div class="d-name">${esc(st.name||'—')}<span class="dir">${dirTag(st.direction)}</span></div>`+
       `<div class="d-card">`+
@@ -272,16 +321,26 @@
         `<div class="d-row" id="rowAcc" style="display:none;"><span class="d-k">GPS精度</span><span class="d-v" id="dispAcc"></span></div>`+
       `</div>`+
       `<div class="d-actions">`+
-        `<button class="btn" id="gpsSet">📍 現在地(GPS)で座標を設定</button>`+
+        `<div class="gpsrow">`+
+          `<button class="btn" id="gpsSet">📍 現在地(GPS)で座標を設定</button>`+
+          `<div class="gpsdist"><span class="lb">現在地との差</span><span class="v" id="gpsDistV">—</span></div>`+
+        `</div>`+
         `<a class="btn" id="gmapLink" target="_blank" rel="noopener">🗺 Googleマップで開く</a>`+
         `<button class="btn pri" id="saveBtn">💾 保存（DBへ反映）</button>`+
       `</div>`+
-      `<div class="note">座標は「地図ピンのドラッグ/タップ」または「現在地(GPS)で設定」で更新します。保存はドラサポと共通のDBへ反映されます。</div>`;
-    refreshCoordDisp();
+      `<div class="note">「現在地との差」は端末の現在地と登録済み座標の距離です。座標は「地図ピンのドラッグ/タップ」または「現在地(GPS)で設定」で更新します。保存はドラサポと共通のDBへ反映されます。</div>`;
+    refreshCoordDisp(); updateGpsDist();
     $('gpsSet').addEventListener('click', gpsSetCoord);
     $('saveBtn').addEventListener('click', saveEdit);
     show('scDetail'); $('detailArea').scrollTop=0;
     initMap();
+    if(!myPos) acquireMyPos(ok=>{ if(ok) updateGpsDist(); });
+  }
+  function updateGpsDist(){
+    const el=$('gpsDistV'); if(!el) return;
+    if(!myPos){ el.textContent='位置未取得'; return; }
+    if(regLat==null||regLng==null){ el.textContent='登録なし'; return; }
+    el.textContent = fmtDist(distM(myPos.lat,myPos.lng,regLat,regLng));
   }
   function refreshCoordDisp(){
     const has = pendLat!=null && pendLng!=null;
@@ -316,7 +375,9 @@
     if(!navigator.geolocation){ toast('この端末はGPS非対応です'); return; }
     toast('現在地を取得中…');
     navigator.geolocation.getCurrentPosition(p=>{
+      myPos={lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy};
       setPend(p.coords.latitude, p.coords.longitude, p.coords.accuracy);
+      updateGpsDist();
       if(gmap && gmarker){ const pos={lat:pendLat,lng:pendLng}; gmarker.setPosition(pos); gmap.panTo(pos); gmap.setZoom(18); }
       toast(`座標を取得しました（±${Math.round(pendAcc)}m）。保存で確定します`);
     }, e=> toast('現在地の取得に失敗: '+e.message), {enableHighAccuracy:true, timeout:15000, maximumAge:0});
@@ -350,6 +411,21 @@
   $('modeAiu').addEventListener('click', ()=>{ mode='aiu'; $('modeAiu').classList.add('active'); $('modeHere').classList.remove('active'); render(); });
   $('modeHere').addEventListener('click', ()=>{ mode='here'; $('modeHere').classList.add('active'); $('modeAiu').classList.remove('active'); render(); });
   let sT=null; $('searchBox').addEventListener('input', ()=>{ clearTimeout(sT); sT=setTimeout(render, 150); });
+
+  // ---- オープニング(ドラサポと同様。タップでスタート＋現在地取得) ----
+  (function opening(){
+    const splash=$('splash'); if(!splash) return;
+    let started=false;
+    function hideSplash(){ splash.classList.add('hide'); setTimeout(()=>{ if(splash.parentNode) splash.remove(); }, 600); }
+    function go(){
+      if(started) return; started=true;
+      splash.classList.add('play');
+      setTimeout(hideSplash, 2200);
+      acquireMyPos(ok=>{ if(ok) render(); });   // ユーザー操作時に現在地取得→一覧に距離表示
+    }
+    ['pointerdown','touchstart','click'].forEach(ev=>{ splash.addEventListener(ev, go); });
+    setTimeout(go, 10000);   // 無操作でも進む保険
+  })();
 
   load();
 })();
