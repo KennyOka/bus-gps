@@ -126,7 +126,7 @@
   .target-card{ margin-top:12px; width:100%; max-width:460px; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.12); border-radius:14px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
   .tc-left{ flex:1; min-width:0; }
   .tc-lbl{ font-size:11px; color:var(--ink-dim); }
-  .target-name{ width:4.4em; font-size:44px; font-weight:800; line-height:1.1; white-space:nowrap; overflow:hidden; }
+  .target-name{ width:100%; font-size:44px; font-weight:800; line-height:1.1; white-space:nowrap; overflow:hidden; }
   .tn-text{ display:inline-block; will-change:transform; }
   .tn-text.scroll{ animation: tnMarquee var(--dur,7s) linear infinite; }   /* ④ 先頭表示→左スクロール→繰り返し */
   @keyframes tnMarquee{ 0%,12%{ transform:translateX(0); } 88%,100%{ transform:translateX(var(--to,0)); } }
@@ -170,7 +170,10 @@
   .dialog .d-row{ display:flex; justify-content:space-between; align-items:baseline; gap:12px; padding:4px 0; }
   .dialog .d-k{ font-size:14px; color:var(--ink-dim); white-space:nowrap; }
   .dialog .d-v{ font-size:30px; font-weight:800; font-family:var(--mono); letter-spacing:.02em; }
+  .dialog .d-check{ display:flex; align-items:center; justify-content:center; gap:10px; font-size:20px; font-weight:900; color:#241c00; background:var(--late-y); border-radius:10px; padding:14px 10px; margin-bottom:16px; letter-spacing:.03em; cursor:pointer; }
+  .dialog .d-check input{ width:26px; height:26px; accent-color:#241c00; flex-shrink:0; }
   .dialog .d-ok{ width:100%; padding:15px; border:none; border-radius:11px; background:var(--ink); color:var(--bg); font-size:17px; font-weight:800; }
+  .dialog .d-ok:disabled{ opacity:.4; }
   .dialog .d-cancel{ width:100%; padding:11px; border:none; border-radius:10px; background:transparent; color:var(--ink-dim); font-size:13px; margin-top:8px; }
   /* トースト・補正表示 */
   .toast{ position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 100px); transform:translateX(-50%); background:rgba(0,0,0,.85); color:#fff; padding:11px 20px; border-radius:20px; font-size:14px; z-index:80; opacity:0; transition:opacity .3s; pointer-events:none; max-width:90%; text-align:center; }
@@ -282,11 +285,11 @@
   <div class="overlay" id="confirmOverlay">
     <div class="dialog">
       <div class="d-head" id="cfHead">ダイヤ — ・ —</div>
-      <div class="d-dest" id="cfDest">この車は「—」行きです</div>
-      <div class="d-note">⚠ 方向幕変更確認</div>
+      <div class="d-dest" id="cfDest">この便は「—」行きです</div>
       <div class="d-rows" id="cfRows"></div>
-      <button class="d-ok" id="cfOk">確認して開始</button>
-      <button class="d-cancel" id="cfCancel">キャンセル</button>
+      <label class="d-check"><input type="checkbox" id="cfCheck"> ⚠ 方向幕変更を確認</label>
+      <button class="d-ok" id="cfOk" disabled>▶ 開始</button>
+      <button class="d-cancel" id="cfCancel">キャンセル（コース選択へ）</button>
     </div>
   </div>
   <div class="toast" id="toast"></div>
@@ -453,12 +456,13 @@
       if(!j.stops || !j.stops.length){ alert('このコースには停留所データがありません(count=0)'); return; }
       stops=j.stops;
       targetIndex=0; lastAtStopIndex=-1; corrections={};   // 新コースは補正をリセット
-      $('monCourse').textContent=`${c.start_place}(${hhmmc(stops[0])}) → ${c.end_place}(${hhmmc(stops[stops.length-1])})`;
+      $('monCourse').textContent=`${c.start_place}(${hmColon(stops[0])}) → ${c.end_place}(${hmColon(stops[stops.length-1])})`;
       $('monSub').textContent=`タッチ ${c.touch_no||'—'}${c.digital_no?' ・ デジタル'+c.digital_no:''}`;
       buildRail();
       resetMonUI();
       $('simStop').max=String(stops.length-1); $('simStop').value='0';
       show('scMon');
+      if(mode==='gps') showConfirm();   // ① コース選択後に行き先確認ポップアップ
     }catch(e){ alert('通信エラー: '+e.message); }
   }
   $('monBack').onclick=()=>{ liveStop(); stopGps(); show('scList'); };
@@ -468,6 +472,7 @@
   function fmtSec(sec){ const s=Math.round(sec); const a=Math.abs(s); const m=Math.floor(a/60), ss=a%60; return `${m}:${String(ss).padStart(2,'0')}`; }
   function hhmm(stop){ const p=(stop.scheduled_time||'').split(':'); return p.length>=2?`${p[0]}:${p[1]}`:'--:--'; }
   function hhmmc(stop){ const p=(stop&&stop.scheduled_time||'').split(':'); return p.length>=2?`${p[0]}${p[1]}`:'----'; }   // ⑥ 0958形式
+  function hmColon(stop){ const p=(stop&&stop.scheduled_time||'').split(':'); return p.length>=2?`${+p[0]}:${p[1]}`:'--:--'; }   // ② 7:12形式(ゼロサプレス)
 
   // ---- 早発判定(現在の壁時計 vs 絶対定刻) ----
   function evaluate(lat,lng,now){
@@ -529,7 +534,7 @@
     $('targetDist').textContent='';
     terminalAnnounced=false; lastEarlyAnnounce=0; curTargetName=null; earlyIdx=-1; earlyN=0; okAnnouncedIdx=-1; preOkIdx=-1;
     if(stops[0]){ setTargetName(dispName(stops[0])); setEta(hhmm(stops[0])); }
-    setNextPrev(stops[1] ? `次々は ${stops[1].name}（${hhmm(stops[1])}）` : '次々は 終点');   // ① 最初から次停を表示
+    setNextPrev(stops[1] ? `次々は ${stops[1].name}（${hhmm(stops[1])}）` : '次は 終点');   // ① 最初から次停を表示
     updateRail();
   }
   // 遅れの程度で色分け: 5分以上=黄, 10分以上=橙 (remainingSecは負=遅れ)
@@ -541,7 +546,7 @@
     tag.className='state-tag'; diff.className='diff';
     $('targetDist').textContent = (st.d!=null && isFinite(st.d)) ? `現在地から 約 ${Math.round(st.d)} m` : '';   // ② 距離
     const nxt = st.state!=='finished' ? stops[targetIndex+1] : null;
-    setNextPrev(st.state==='finished' ? '' : (nxt ? `次々は ${nxt.name}（${hhmm(nxt)}）` : '次々は 終点'));
+    setNextPrev(st.state==='finished' ? '' : (nxt ? `次々は ${nxt.name}（${hhmm(nxt)}）` : '次は 終点'));
 
     if(st.state==='terminal'){   // ⑦ 終点到着(早発判定しない)
       document.body.classList.add('state-ok');
@@ -624,6 +629,7 @@
   function beginRun(){ speak('ドラサポを開始します。キバリンショロー、ご安全に！'); startGps(); }
   function showConfirm(){
     if(!course){ beginRun(); return; }
+    $('cfCheck').checked=false; $('cfOk').disabled=true;   // ① 毎回チェックし直し
     $('cfHead').textContent = `ダイヤ ${currentDiaNo||''} ・ ${dayType===1?'平日':'土日祝'}`;
     $('cfDest').textContent = `この便は「${course.end_place||'—'}」行きです`;
     $('cfRows').innerHTML =
@@ -632,8 +638,9 @@
       (course.digital_no?`<div class="d-row"><span class="d-k">デジタル番号</span><span class="d-v">${course.digital_no}</span></div>`:'');
     $('confirmOverlay').classList.add('show');
   }
-  $('cfCancel').addEventListener('click', ()=> $('confirmOverlay').classList.remove('show'));
-  $('cfOk').addEventListener('click', ()=>{ $('confirmOverlay').classList.remove('show'); primeAudio(); beginRun(); });
+  $('cfCheck').addEventListener('change', ()=>{ $('cfOk').disabled = !$('cfCheck').checked; });   // ① チェックで開始可
+  $('cfCancel').addEventListener('click', ()=>{ $('confirmOverlay').classList.remove('show'); show('scList'); });   // ① コース選択へ戻る
+  $('cfOk').addEventListener('click', ()=>{ if(!$('cfCheck').checked) return; $('confirmOverlay').classList.remove('show'); primeAudio(); beginRun(); });
   async function flushCorrections(){
     const ids=Object.keys(corrections); if(!ids.length) return;
     const fixes=ids.map(id=>({busstop_id:+id, lat:corrections[id].lat, lng:corrections[id].lng}));
@@ -680,7 +687,7 @@
     if(mode==='demo') return runDemo();
     if(lastLat!=null) return update(lastLat,lastLng,new Date());
     const s=stops[targetIndex]; if(s){ setTargetName(dispName(s)); setEta(hhmm(s)); }
-    const nxt=stops[targetIndex+1]; setNextPrev(nxt?`次々は ${nxt.name}（${hhmm(nxt)}）`:'次々は 終点');
+    const nxt=stops[targetIndex+1]; setNextPrev(nxt?`次々は ${nxt.name}（${hhmm(nxt)}）`:'次は 終点');
     updateRail();
   }
   $('prevBtn').addEventListener('click', ()=>{ if(targetIndex>0){ targetIndex--; lastAtStopIndex=-1; terminalAnnounced=false; refreshAfterNav(); } });
