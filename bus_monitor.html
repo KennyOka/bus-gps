@@ -547,6 +547,8 @@
   }
   // 遅れの程度で色分け: 5分以上=黄, 10分以上=橙 (remainingSecは負=遅れ)
   function lateClass(rem){ const m=-rem/60; if(m>=10) return 'o'; if(m>=5) return 'y'; return null; }
+  // 遅れの段階(3分未満は無し)。remは負=遅れ。符号は付けず、段階ラベルと色を返す
+  function lateStage(rem){ const m=-rem/60; if(m<3) return null; if(m<6) return {label:'ちょい遅れ！',cls:'late-y'}; if(m<10) return {label:'だいぶ遅れ！',cls:'late-o'}; return {label:'大幅遅延！',cls:'late-o'}; }
 
   function render(st){
     clearStateClasses();
@@ -582,12 +584,9 @@
       if(earlyIdx!==targetIndex){ earlyIdx=targetIndex; earlyN=0; }                  // ⑤ 停留所ごとにカウント
       { const t=Date.now(); if(earlyN<3 && t-lastEarlyAnnounce>4000){ speak('早発です'); lastEarlyAnnounce=t; earlyN++; } }  // 最大3回
     } else if(st.state==='ok'){
-      const lc=lateClass(st.remainingSec);
-      if(lc==='o'){ document.body.classList.add('state-late-o'); tag.classList.add('late-o'); diff.classList.add('late-o'); tag.textContent='⚠ 大幅遅れ'; }
-      else if(lc==='y'){ document.body.classList.add('state-late-y'); tag.classList.add('late-y'); diff.classList.add('late-y'); tag.textContent='遅れ'; }
-      else { document.body.classList.add('state-ok'); tag.classList.add('ok'); diff.classList.add('ok'); tag.textContent='✅ 正常運行'; }
-      diff.textContent='+'+fmtSec(st.remainingSec);
-      $('caption').textContent = st.remainingSec<-3 ? `定刻より ${fmtSec(st.remainingSec)} 遅れ` : '定刻到達';
+      const stg=lateStage(st.remainingSec);   // 3分以上の遅れのみ段階表示
+      if(stg){ document.body.classList.add('state-'+stg.cls); tag.classList.add(stg.cls); diff.classList.add(stg.cls); tag.textContent=stg.label; diff.textContent=fmtSec(st.remainingSec); $('caption').textContent=''; }
+      else { document.body.classList.add('state-ok'); tag.classList.add('ok'); diff.classList.add('ok'); tag.textContent='✅ 正常運行'; diff.textContent=''; $('caption').textContent='定刻'; }   // 3分未満は差分を表示しない
       if(preOkIdx===targetIndex && okAnnouncedIdx!==targetIndex){ okAnnouncedIdx=targetIndex; speak('定刻です。'); }  // ②定刻案内(早発だった停/始発地で1回)
     } else if(st.state==='waiting'){   // 始発地は早発警告しない
       tag.classList.add('appr'); tag.textContent='🚏 始発 待機';
@@ -596,13 +595,9 @@
       preOkIdx=targetIndex;   // 始発地でも定刻案内の対象に
     } else { // approaching
       if(st.remainingSec<0){
-        const lc=lateClass(st.remainingSec);
-        if(lc==='o'){ document.body.classList.add('state-late-o'); diff.classList.add('late-o'); }
-        else if(lc==='y'){ document.body.classList.add('state-late-y'); diff.classList.add('late-y'); }
-        else diff.classList.add('appr');
-        tag.textContent='走行中(遅れ)';
-        diff.textContent='−'+fmtSec(st.remainingSec);
-        $('caption').textContent=`定刻を ${fmtSec(st.remainingSec)} 超過(遅れは問題なし)`;
+        const stg=lateStage(st.remainingSec);   // 3分以上の遅れのみ段階表示
+        if(stg){ document.body.classList.add('state-'+stg.cls); tag.classList.add(stg.cls); diff.classList.add(stg.cls); tag.textContent=stg.label; diff.textContent=fmtSec(st.remainingSec); $('caption').textContent=''; }
+        else { tag.classList.add('appr'); tag.textContent='走行中'; diff.classList.add('appr'); diff.textContent=''; $('caption').textContent=''; }   // 3分未満は差分を表示しない
       } else {
         tag.classList.add('appr'); tag.textContent='走行中'; diff.classList.add('appr');
         diff.textContent=fmtSec(st.remainingSec);
