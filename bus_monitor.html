@@ -162,6 +162,11 @@
   /* ⑥ 方向幕確認ポップアップ */
   .overlay{ position:fixed; inset:0; z-index:90; background:rgba(0,0,0,.62); display:none; align-items:center; justify-content:center; padding:24px; }
   .overlay.show{ display:flex; }
+  /* ① 発車カウントダウン(残り10秒〜) */
+  #depCount{ position:fixed; inset:0; z-index:86; display:none; flex-direction:column; align-items:center; justify-content:center; background:rgba(6,10,20,.78); }
+  #depCount.show{ display:flex; }
+  #depCountNum{ font-family:var(--mono); font-size:46vw; font-weight:900; color:#fff; line-height:.9; text-shadow:0 0 30px rgba(77,163,255,.6); }
+  #depCount .dep-lbl{ font-size:22px; color:#cfe0f5; margin-top:12px; letter-spacing:.25em; }
   .dialog{ background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:22px 20px; max-width:430px; width:100%; text-align:center; }
   .dialog .d-head{ font-size:13px; color:var(--ink-dim); }
   .dialog .d-dest{ font-size:26px; font-weight:800; margin:8px 0 4px; }
@@ -293,6 +298,9 @@
     </div>
   </div>
   <div class="toast" id="toast"></div>
+
+  <!-- ① 発車カウントダウン(残り10秒〜0) -->
+  <div id="depCount"><div id="depCountNum">10</div><div class="dep-lbl">発車まで</div></div>
 
   <!-- ダイヤ一覧 -->
   <div class="overlay" id="diaListOverlay">
@@ -614,19 +622,52 @@
 
   function update(lat,lng,now){ render(evaluate(lat,lng,now)); }
 
+  // ---- ① 発車カウントダウン(始発地で開始した時) ----
+  let depTimer=null, depMinAnn=false, depZeroAnn=false, pendingAutoStart=false;
+  const DEPART_NEAR_M = 100;   // 始発地とみなす距離
+  function startDepCountdown(){
+    stopDepCountdown();
+    if(!stops[0]) return;
+    const rem0=(schedDate(stops[0]).getTime()-Date.now())/1000;
+    if(rem0<=0) return;              // 既に発車時刻を過ぎている→不要
+    depMinAnn = rem0<=60;           // 60秒以内で開始したら「1分前」は省略
+    depZeroAnn = false;
+    depTimer=setInterval(depTick, 200); depTick();
+  }
+  function stopDepCountdown(){ if(depTimer){ clearInterval(depTimer); depTimer=null; } $('depCount').classList.remove('show'); }
+  function depTick(){
+    if(targetIndex!==0 || !stops[0]){ stopDepCountdown(); return; }   // 発車して次停へ進んだら終了
+    const rem=(schedDate(stops[0]).getTime()-Date.now())/1000;
+    if(rem<=60 && !depMinAnn){ depMinAnn=true; speak('定刻1分前です'); }
+    if(rem<=10 && rem>0){ $('depCountNum').textContent=String(Math.ceil(rem)); $('depCount').classList.add('show'); }
+    else { $('depCount').classList.remove('show'); }
+    if(rem<=0){ if(!depZeroAnn){ depZeroAnn=true; okAnnouncedIdx=0; speak('定刻です'); } stopDepCountdown(); }
+  }
+  // ② 始発地でない場所で開始→現在地に最も近いバス停から開始
+  function autoStartTarget(lat,lng){
+    const s0=stops[0];
+    const d0=(s0&&s0.lat!=null)? distM(lat,lng,s0.lat,s0.lng) : Infinity;
+    if(d0<=DEPART_NEAR_M){ targetIndex=0; lastAtStopIndex=-1; updateRail(); startDepCountdown(); return; }   // ① 始発地で開始
+    let ni=-1,best=Infinity;
+    stops.forEach((s,i)=>{ if(s.lat!=null){ const d=distM(lat,lng,s.lat,s.lng); if(d<best){best=d;ni=i;} } });
+    if(ni>=0){ targetIndex=ni; lastAtStopIndex=-1; updateRail(); toast(`現在地に近い「${stops[ni].name}」から開始します`); }
+  }
+
   // ---- GPS ----
   function startGps(){
     if(!navigator.geolocation){ $('gpsNote').textContent='GPS非対応端末'; return; }
     $('gpsNote').textContent='GPS取得中…';
     watchId=navigator.geolocation.watchPosition(
-      p=>{ lastLat=p.coords.latitude; lastLng=p.coords.longitude; $('gpsNote').textContent=`精度±${Math.round(p.coords.accuracy)}m`; update(lastLat,lastLng,new Date()); },
+      p=>{ lastLat=p.coords.latitude; lastLng=p.coords.longitude; $('gpsNote').textContent=`精度±${Math.round(p.coords.accuracy)}m`;
+           if(pendingAutoStart){ pendingAutoStart=false; autoStartTarget(lastLat,lastLng); }
+           update(lastLat,lastLng,new Date()); },
       e=>{ $('gpsNote').textContent='位置情報エラー: '+e.message; },
       { enableHighAccuracy:true, maximumAge:1000, timeout:15000 });
     $('startBtn').textContent='停止';
   }
-  function stopGps(){ if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null; } $('startBtn').textContent='開始'; }
+  function stopGps(){ if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null; } pendingAutoStart=false; stopDepCountdown(); $('startBtn').textContent='開始'; }
   // ⑥ 開始→確認ポップアップ→確認で開始 / ⑫ 停止で補正保存
-  function beginRun(){ speak('ドラサポを開始します。キバリンショロー、ご安全に！'); startGps(); }
+  function beginRun(){ pendingAutoStart=true; speak('ドラサポを開始します。キバリンショロー、ご安全に！'); startGps(); }
   function showConfirm(){
     if(!course){ beginRun(); return; }
     $('cfCheck').checked=false; $('cfOk').disabled=true;   // ① 毎回チェックし直し
