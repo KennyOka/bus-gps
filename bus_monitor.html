@@ -352,6 +352,7 @@
   // tokyoknock.com 配下なら相対(同一オリジン=CORS不要)、それ以外(GitHub Pages等)は絶対URL
   const API_BASE = (location.origin === 'https://tokyoknock.com') ? 'api/' : 'https://tokyoknock.com/bus/api/';
   const CORRECT_SECRET = 'shimabus-fix-2026';   // ⑫ 補正APIの合言葉(update_busstops.php と一致させる)
+  const CORRECT_MAX_ACC = 10;   // 補正はGPS精度±この値(m)以内のときのみ許可
   const EARLY_GRACE = 15;                        // ① 定刻の15秒前以内は早発としない(許容)
   let STOP_RADIUS_M = parseInt(lsGet('mon_radius') || '20', 10);   // 既定20m・画面で変更可
 
@@ -745,7 +746,7 @@
     if(!navigator.geolocation){ $('gpsNote').textContent='GPS非対応端末'; return; }
     $('gpsNote').textContent='GPS取得中…';
     watchId=navigator.geolocation.watchPosition(
-      p=>{ lastLat=p.coords.latitude; lastLng=p.coords.longitude; $('gpsNote').textContent=`精度±${Math.round(p.coords.accuracy)}m`;
+      p=>{ lastLat=p.coords.latitude; lastLng=p.coords.longitude; $('gpsNote').textContent='';   // 精度表示は不要
            if(pendingAutoStart){ pendingAutoStart=false; autoStartTarget(lastLat,lastLng); }
            update(lastLat,lastLng,new Date()); checkFixMsg(lastLat,lastLng); },
       e=>{ $('gpsNote').textContent='位置情報エラー: '+e.message; },
@@ -802,7 +803,8 @@
     if(!navigator.geolocation){ toast('この端末はGPS非対応'); return; }
     toast('現在地を取得中…');
     navigator.geolocation.getCurrentPosition(p=>{
-      const lat=p.coords.latitude, lng=p.coords.longitude;
+      const lat=p.coords.latitude, lng=p.coords.longitude, acc=p.coords.accuracy;
+      if(acc>CORRECT_MAX_ACC){ toast(`GPS精度が低いため補正できません（±${Math.round(acc)}m・${CORRECT_MAX_ACC}m以内で実施）`); return; }   // 精度ガード
       corrections[stop.busstop_id]={lat,lng, origLat:stop.lat, origLng:stop.lng};   // 元座標も保持
       stop.lat=lat; stop.lng=lng;
       toast(`「${stop.name}」を補正(±${Math.round(p.coords.accuracy)}m)・停止時に保存(もう一度押すと取消)`);
