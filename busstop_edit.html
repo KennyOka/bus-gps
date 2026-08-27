@@ -143,6 +143,7 @@
 (function(){
   const API_BASE = (location.origin === 'https://tokyoknock.com') ? 'api/' : 'https://tokyoknock.com/bus/api/';
   const CORRECT_SECRET = 'shimabus-fix-2026';   // update_busstops.php の SECRET と一致
+  const CORRECT_MAX_ACC = 10;   // GPS座標設定はこの精度(±m)以内のときのみ許可
   // ★Google Maps JS API キー(HTTPリファラ制限を推奨: tokyoknock.com/*, *.github.io/*)。未設定なら地図は無効・GPS編集は可
   const MAPS_API_KEY = 'AIzaSyDang0KukZgL3DamNwX9ZXaLKLpyznl0-I';
   const DEFAULT_CENTER = { lat: 28.377, lng: 129.493 };   // 座標未登録時の初期表示(奄美市名瀬付近)
@@ -299,7 +300,7 @@
       myPos={lat:la, lng:lo, acc:p.coords.accuracy};
       hereList = stops.filter(s=>s.has_coord).map(s=>({st:s, d:distM(la,lo,s.lat,s.lng)}))
                       .sort((a,b)=>a.d-b.d).slice(0,10);
-      toast(`現在地取得(±${Math.round(p.coords.accuracy)}m)`);
+      toast('現在地を取得しました');
       render();
     }, e=> toast('現在地の取得に失敗: '+e.message), {enableHighAccuracy:true, timeout:15000, maximumAge:0});
   }
@@ -383,11 +384,13 @@
     if(!navigator.geolocation){ toast('この端末はGPS非対応です'); return; }
     toast('現在地を取得中…');
     navigator.geolocation.getCurrentPosition(p=>{
-      myPos={lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy};
-      setPend(p.coords.latitude, p.coords.longitude, p.coords.accuracy);
+      const acc=p.coords.accuracy;
+      if(acc>CORRECT_MAX_ACC){ toast(`GPS精度が低いため設定できません（±${Math.round(acc)}m・${CORRECT_MAX_ACC}m以内で実施）`); return; }   // 精度ガード
+      myPos={lat:p.coords.latitude, lng:p.coords.longitude, acc};
+      setPend(p.coords.latitude, p.coords.longitude, null);   // 精度は表示しない
       updateGpsDist();
       if(gmap && gmarker){ const pos={lat:pendLat,lng:pendLng}; gmarker.setPosition(pos); gmap.panTo(pos); gmap.setZoom(18); }
-      toast(`座標を取得しました（±${Math.round(pendAcc)}m）。保存で確定します`);
+      toast('座標を取得しました。保存で確定します');
     }, e=> toast('現在地の取得に失敗: '+e.message), {enableHighAccuracy:true, timeout:15000, maximumAge:0});
   }
   async function saveEdit(){
