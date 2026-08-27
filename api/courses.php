@@ -39,6 +39,8 @@ $sql = "SELECT c.dia_course_id, c.seq, c.category, c.digital_no, c.touch_no,
                COALESCE(c.start_name, s.name) AS start_place,
                COALESCE(c.end_name,   e.name) AS end_place,
                TIME_FORMAT(c.departure_time, '%H:%i') AS departure_time,
+               (SELECT TIME_FORMAT(MAX(cs.scheduled_time), '%H:%i')
+                  FROM m_dia_course_stop cs WHERE cs.dia_course_id = c.dia_course_id) AS arrival_time,
                c.settlement_flag, c.note
         FROM m_dia d
         JOIN m_dia_course c ON c.dia_id = d.dia_id
@@ -63,6 +65,7 @@ while ($row = $res->fetch_assoc()) {
         'start_place'     => $row['start_place'],
         'end_place'       => $row['end_place'],
         'departure_time'  => $row['departure_time'],      // HH:MM
+        'arrival_time'    => $row['arrival_time'],         // HH:MM(最終停の定刻)
         'settlement_flag' => (int)$row['settlement_flag'],
         'note'            => $row['note'],
     ];
