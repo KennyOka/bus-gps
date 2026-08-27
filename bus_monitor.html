@@ -482,8 +482,7 @@
         `<div class="seqn">${c.seq}</div>`+
         `<div class="body"><div class="route">${c.start_place||'—'} → ${c.end_place||'—'}`+
           (c.category!==3?`<span class="badge">${catName[c.category]||c.category}</span>`:'')+
-          (c.settlement_flag?`<span class="badge pay">納金</span>`:'')+`</div>`+
-          `<div class="sub">系統 ${c.touch_no||'—'}${c.digital_no?' ・ デジタル'+c.digital_no:''}</div></div>`+
+          (c.settlement_flag?`<span class="badge pay">納金</span>`:'')+`</div></div>`+
         `<div class="time">${c.departure_time||''}</div>`;
       if(selectable) btn.addEventListener('click', ()=> selectCourse(c));
       wrap.appendChild(btn);
