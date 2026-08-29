@@ -246,10 +246,10 @@ function handle_shimabus_import_route(): void
     //   応答は fare が stop_sequence をキーにした連想配列: {"11":{stop_sequence,price,stop_id,...}, ...}
     //
     // fare_mode:
-    //   matrix(既定) … 乗車停ごとに取得し、全区間(乗車×降車)の運賃を保存。
-    //                   運転士が「今いる停まで、どの停から乗るといくら」を見るために必要。
-    //   origin        … 始発(from_seq=1)のみ。取得は速いが上記の用途には使えない。
-    $fareMode = (string) param('fare_mode', 'matrix');
+    //   origin(既定) … 始発(from_seq=1)のみ。取得が速く、1リクエストで完了する。
+    //   matrix        … 全区間(乗車×降車)。呼び出しが多くWebサーバー側のタイムアウト(504)に
+    //                    かかりやすいので、通常は action=shimabus.importFares で分割実行する。
+    $fareMode = (string) param('fare_mode', 'origin');
     if (!in_array($fareMode, ['matrix', 'origin'], true)) $fareMode = 'matrix';
 
     $fareDate = (new DateTime($targetDate))->format('Y-m-d');
@@ -438,4 +438,147 @@ function handle_shimabus_import_route(): void
 
     $summary['fare_skipped'] = $fareSkipped;   // 登録できなかった運賃行(標柱未解決など)
     json_ok(['mode' => 'commit', 'summary' => $summary, 'committed' => true, 'import_batch_id' => $batchId]);
+}
+
+/* ================================================================== */
+/*  区間運賃（三角表）を分割して取り込む                                */
+/*  action=shimabus.importFares                                        */
+/*                                                                     */
+/*  取込済みの src_trip / src_trip_stop を使うので、外部APIは fare.cgi  */
+/*  だけを呼ぶ。停留所の並びが同じ便は運賃も同一なのでパターン単位で    */
+/*  取得し、1回のリクエストで処理するパターン数を絞って 504(ゲート      */
+/*  ウェイタイムアウト)を避ける。                                       */
+/*                                                                     */
+/*  params:                                                            */
+/*    target_date(YYYYMMDD, 既定=当日)  対象スナップショット           */
+/*    pattern_limit(既定 2)             1回で処理するパターン数         */
+/*    pattern_offset(既定 0)            続きから再開する位置            */
+/*    mode(preview|commit, 既定 commit) preview は取得のみ             */
+/* ================================================================== */
+function handle_shimabus_import_fares(): void
+{
+    require_admin();
+    @set_time_limit(1800);
+    @ini_set('max_execution_time', '1800');
+
+    $targetDate = (string) param('target_date', date('Ymd'));
+    if (!preg_match('/^\d{8}$/', $targetDate)) {
+        json_err('bad_date', 'target_date は YYYYMMDD で指定してください。', 422);
+    }
+    $tgt      = (new DateTime($targetDate))->format('Y-m-d');
+    $fareDate = $tgt;                                  // fare.cgi は YYYY-MM-DD
+    $limit    = max(1, (int) param('pattern_limit', 2));
+    $offset   = max(0, (int) param('pattern_offset', 0));
+    $mode     = (string) param('mode', 'commit');
+
+    $db = pdo();
+
+    // 1) 対象日の便と停留所並びを取得し、パターンごとにまとめる
+    $st = $db->prepare(
+        'SELECT t.src_trip_id, t.trip_key, ts.seq, ts.busstop_id
+           FROM src_trip t
+           JOIN src_trip_stop ts ON ts.src_trip_id = t.src_trip_id
+          WHERE t.target_date = ?
+          ORDER BY t.src_trip_id, ts.seq'
+    );
+    $st->execute([$tgt]);
+
+    $tripStops = [];   // src_trip_id => ['key'=>trip_key, 'stops'=>[seq=>busstop_id]]
+    foreach ($st->fetchAll() as $r) {
+        $id = (int) $r['src_trip_id'];
+        if (!isset($tripStops[$id])) $tripStops[$id] = ['key' => $r['trip_key'], 'stops' => []];
+        $tripStops[$id]['stops'][(int) $r['seq']] = (int) $r['busstop_id'];
+    }
+    if (!$tripStops) {
+        json_err('no_trips', "対象日({$tgt})の便が取り込まれていません。先に shimabus.importRoute を実行してください。", 422);
+    }
+
+    // パターン = 停留所IDの並び
+    $patterns = [];   // signature => ['rep_key','stops'=>[...], 'trip_ids'=>[...]]
+    foreach ($tripStops as $id => $t) {
+        $sig = implode(',', $t['stops']);
+        if (!isset($patterns[$sig])) $patterns[$sig] = ['rep_key' => $t['key'], 'stops' => $t['stops'], 'trip_ids' => []];
+        $patterns[$sig]['trip_ids'][] = $id;
+    }
+    $sigs      = array_keys($patterns);
+    $totalPat  = count($sigs);
+    $slice     = array_slice($sigs, $offset, $limit);
+    $nextOffset = $offset + count($slice);
+
+    // 2) パターンごとに運賃を取得
+    $fetched = [];   // signature => [ ['from_seq','to_seq','price','to_busstop_id'], ... ]
+    $errors  = [];
+    $calls   = 0;
+    foreach ($slice as $sig) {
+        $p       = $patterns[$sig];
+        $maxSeq  = max(array_keys($p['stops']));
+        $rows    = [];
+        for ($from = 1; $from < $maxSeq; $from++) {
+            $f = shimabus_post('fare', ['trip_id' => $p['rep_key'], 'stop_sequence' => $from, 'target_date' => $fareDate]);
+            $calls++;
+            usleep(SHIMABUS_SLEEP_US);
+            if (isset($f['ok']) && !$f['ok']) { $errors[$p['rep_key'] . '#' . $from] = (string) ($f['errmsg'] ?? 'unknown'); continue; }
+            foreach (($f['fare'] ?? []) as $seqKey => $x) {
+                if (!is_array($x)) continue;
+                $toSeq = (int) ($x['stop_sequence'] ?? $seqKey);
+                if ($toSeq <= 0) continue;
+                $rows[] = [
+                    'from_seq'      => $from,
+                    'to_seq'        => $toSeq,
+                    'price'         => (int) ($x['price'] ?? 0),
+                    'to_busstop_id' => $p['stops'][$toSeq] ?? (int) ($x['busstop_id'] ?? 0),   // DB側の並びを優先
+                ];
+            }
+        }
+        $fetched[$sig] = $rows;
+    }
+
+    $fareRows = array_sum(array_map('count', $fetched));
+    $tripsAffected = 0;
+    foreach ($slice as $sig) $tripsAffected += count($patterns[$sig]['trip_ids']);
+
+    $summary = [
+        'target_date'    => $tgt,
+        'patterns_total' => $totalPat,
+        'pattern_offset' => $offset,
+        'patterns_done'  => count($slice),
+        'next_offset'    => $nextOffset,
+        'finished'       => $nextOffset >= $totalPat,
+        'trips_affected' => $tripsAffected,
+        'fare_rows'      => $fareRows,
+        'api_calls'      => $calls,
+        'fare_errors'    => count($errors),
+        'fare_error_sample' => array_slice($errors, 0, 3, true),
+    ];
+
+    if ($mode !== 'commit') {
+        json_ok(['mode' => 'preview', 'summary' => $summary, 'committed' => false]);
+    }
+
+    // 3) 書込（取得に時間がかかり接続が切れているため張り直す）
+    $w = shimabus_fresh_pdo();
+    $w->beginTransaction();
+    try {
+        $del = $w->prepare('DELETE FROM src_fare WHERE src_trip_id = ?');
+        $ins = $w->prepare('INSERT INTO src_fare (src_trip_id, from_seq, to_seq, to_busstop_id, price) VALUES (?,?,?,?,?)');
+        $skipped = 0; $written = 0;
+        foreach ($slice as $sig) {
+            foreach ($patterns[$sig]['trip_ids'] as $tripId) {
+                $del->execute([$tripId]);
+                foreach ($fetched[$sig] as $fr) {
+                    if (empty($fr['to_busstop_id'])) { $skipped++; continue; }
+                    $ins->execute([$tripId, $fr['from_seq'], $fr['to_seq'], $fr['to_busstop_id'], $fr['price']]);
+                    $written++;
+                }
+            }
+        }
+        $w->commit();
+        $summary['rows_written'] = $written;   // 実際にDBへ入れた行数(便数ぶん展開後)
+        $summary['fare_skipped'] = $skipped;
+    } catch (Throwable $e) {
+        $w->rollBack();
+        throw $e;
+    }
+
+    json_ok(['mode' => 'commit', 'summary' => $summary, 'committed' => true]);
 }
