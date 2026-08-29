@@ -88,6 +88,19 @@ function shimabus_dir_from_pole(string $poleId): int
     return 9;
 }
 
+/** 書込フェーズ用に新しいDB接続を張る。
+ *  取得フェーズが長く、pdo() の既存接続が wait_timeout で切れているため必要。 */
+function shimabus_fresh_pdo(): PDO
+{
+    $db  = $GLOBALS['CONFIG']['db'];
+    $dsn = "mysql:host={$db['host']};dbname={$db['name']};charset={$db['charset']}";
+    return new PDO($dsn, $db['user'], $db['pass'], [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES   => false,
+    ]);
+}
+
 /** "HH:MM" or "HH:MM:SS" を TIME 文字列へ。空は null。 */
 function shimabus_time($v): ?string
 {
@@ -110,6 +123,10 @@ function handle_shimabus_import_route(): void
     if (!preg_match('/^\d{8}$/', $targetDate)) {
         json_err('bad_date', 'target_date は YYYYMMDD で指定してください。', 422);
     }
+    // 便数×外部API呼び出し＋ウェイトで数分かかるため、実行時間の上限を延ばす
+    @set_time_limit(900);
+    @ini_set('max_execution_time', '900');
+
     $mode  = (string) param('mode', 'preview');
     // 任意: 系統番号で絞り込み。起点signageが空の系統(例 山羊島 i=330 の系統2801)を、
     //       経路途中のハブ停(例 和光園前 80)を origin に指定して取り込むための絞り込み。
@@ -245,7 +262,10 @@ function handle_shimabus_import_route(): void
     }
 
     /* ---- 2) 書込（commit） ---- */
-    $db = pdo();
+    // 取得フェーズ(外部API×便数＋ウェイト)で数分かかるため、最初に開いたDB接続は
+    // wait_timeout で切断されていることがある(SQLSTATE HY000 4031)。
+    // ここで必ず新しい接続を張り直してから書き込む。
+    $db = shimabus_fresh_pdo();
     $db->beginTransaction();
     try {
         // 取り込みバッチ
