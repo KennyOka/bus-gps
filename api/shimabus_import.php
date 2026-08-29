@@ -169,6 +169,7 @@ function handle_shimabus_import_route(): void
     usleep(SHIMABUS_SLEEP_US);
 
     $tripData = [];   // trip_key => ['route_key','route_name','headsign','stops'=>[...]]
+    $tripsNoStops = 0;   // 指定日に運行しない(=停留所が返らない)便
     foreach ($trips as $t) {
         $tripKey = (string) ($t['trip_id'] ?? '');
         if ($tripKey === '') continue;
@@ -187,12 +188,23 @@ function handle_shimabus_import_route(): void
                 'dep'        => shimabus_time($s['departure_time'] ?? ''),
             ];
         }
+        // 指定日に運行しない便は tripdetail が空を返す。空の便を入れるとDBに中身の無い
+        // 便が作られてしまうため取り込まない。
+        if (!$stops) { $tripsNoStops++; continue; }
         $tripData[$tripKey] = [
             'route_key'  => (string) ($t['route_id'] ?? ''),
             'route_name' => (string) ($t['route'] ?? ''),
             'headsign'   => (string) ($t['headsign'] ?? ''),
             'stops'      => $stops,
         ];
+    }
+
+    // signagebase(バス停サイネージ)は当日のダイヤしか返さない。過去/未来日を指定しても
+    // 便一覧は当日のものになるため、その便は指定日に運行せず全滅する。
+    if (!$tripData) {
+        json_err('date_mismatch',
+            "指定日({$targetDate})に運行する便が取得できませんでした。便一覧は当日のダイヤ({$service})しか取得できないため、"
+            . "取り込みたいダイヤ(平日/土日祝など)が実際に運行する日に実行してください。", 422);
     }
 
     // 出現する全バス停の緯度経度（標柱別）
@@ -306,6 +318,7 @@ function handle_shimabus_import_route(): void
         'target_date'   => $targetDate,
         'trips'         => count($tripData),
         'trips_total'   => $tripsTotal,                              // signage上の全便数(分割時の目安)
+        'trips_no_stops'=> $tripsNoStops,                            // 指定日に運行せず除外した便
         'trip_offset'   => $tripOffset,
         'busstops'      => count($busstopIds),
         'poles'         => count($poles),
@@ -581,4 +594,59 @@ function handle_shimabus_import_fares(): void
     }
 
     json_ok(['mode' => 'commit', 'summary' => $summary, 'committed' => true]);
+}
+
+/* ================================================================== */
+/*  停留所を持たない便(空データ)を削除する                              */
+/*  action=shimabus.cleanupEmptyTrips                                  */
+/*                                                                     */
+/*  signagebase が当日ダイヤしか返さないため、別日を指定して取り込むと   */
+/*  「指定日に運行しない便」が中身なしで作られることがある。その掃除用。  */
+/*  params: target_date(YYYYMMDD 任意。省略時は全日付が対象)            */
+/*          mode(preview|commit, 既定 preview)                          */
+/* ================================================================== */
+function handle_shimabus_cleanup_empty_trips(): void
+{
+    require_admin();
+    $mode = (string) param('mode', 'preview');
+    $date = (string) param('target_date', '');
+    $db   = pdo();
+
+    $where = 'NOT EXISTS (SELECT 1 FROM src_trip_stop ts WHERE ts.src_trip_id = t.src_trip_id)';
+    $args  = [];
+    if ($date !== '') {
+        if (!preg_match('/^\d{8}$/', $date)) json_err('bad_date', 'target_date は YYYYMMDD で指定してください。', 422);
+        $where .= ' AND t.target_date = ?';
+        $args[] = (new DateTime($date))->format('Y-m-d');
+    }
+
+    $sel = $db->prepare("SELECT t.src_trip_id, t.trip_key, t.target_date FROM src_trip t WHERE $where ORDER BY t.src_trip_id");
+    $sel->execute($args);
+    $rows = $sel->fetchAll();
+
+    $summary = [
+        'target_date' => $date !== '' ? (new DateTime($date))->format('Y-m-d') : 'すべて',
+        'empty_trips' => count($rows),
+        'sample'      => array_slice(array_column($rows, 'trip_key'), 0, 5),
+    ];
+    if ($mode !== 'commit') {
+        json_ok(['mode' => 'preview', 'summary' => $summary, 'deleted' => 0]);
+    }
+
+    $deleted = 0;
+    $db->beginTransaction();
+    try {
+        $delFare = $db->prepare('DELETE FROM src_fare WHERE src_trip_id = ?');
+        $delTrip = $db->prepare('DELETE FROM src_trip WHERE src_trip_id = ?');
+        foreach ($rows as $r) {
+            $delFare->execute([(int) $r['src_trip_id']]);
+            $delTrip->execute([(int) $r['src_trip_id']]);
+            $deleted++;
+        }
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
+    json_ok(['mode' => 'commit', 'summary' => $summary, 'deleted' => $deleted]);
 }

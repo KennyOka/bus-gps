@@ -69,6 +69,7 @@ try {
         // ---- しまバスHPからの取り込み（管理者 role=9） ----
         case 'shimabus.importRoute': handle_shimabus_import_route(); break;
         case 'shimabus.importFares': handle_shimabus_import_fares(); break;   // 区間運賃(三角表)を分割取込
+        case 'shimabus.cleanupEmptyTrips': handle_shimabus_cleanup_empty_trips(); break; // 空の便を削除
 
         default:
             json_err('unknown_action', "未定義のaction: {$action}", 404);
