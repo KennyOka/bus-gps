@@ -823,7 +823,7 @@
       fxPat=null;
     }
     const pad=Math.round(H*0.28);
-    if(!fxPat) fxPat=fxBuildPattern(Math.round(W*dpr), Math.round(H*dpr), Math.round(Math.min(W,H)*dpr/7), Math.round(pad*dpr));
+    if(!fxPat) fxPat=fxBuildPattern(Math.round(W*dpr), Math.round(H*dpr), Math.round(Math.min(W,H)*dpr/4), Math.round(pad*dpr));   // 市松のマス目(小さいほど細かい)
     if(!fxStart) fxStart=ts;
     const t=(ts-fxStart)/1000;
 
