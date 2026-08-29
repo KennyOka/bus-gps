@@ -1,11 +1,12 @@
 <?php
 /*
- * fares.php — 指定コースの「始発から各バス停までの運賃」一覧を返す。
- * 取込済みの src_fare(from_seq=1 起点の運賃) を利用。読み取り専用(SELECT)。
+ * fares.php — 「今いるバス停まで、どの停から乗るといくらか」の運賃表を返す。
+ * 車内の運賃表示器と同じ考え方: 乗車停(from) → 現在停(to) の運賃を一覧で返す。
+ * 取込済みの src_fare(区間運賃) を利用。読み取り専用(SELECT)。
  *
- * 【リクエスト】 GET fares.php?dia_course_id=2898
- * 【突合】 m_dia_course の始発停(start_busstop_id)+発時刻(departure_time) で src_trip を特定。
- *          見つからない場合は始発停のみで最も近い便にフォールバック。
+ * 【リクエスト】 GET fares.php?dia_course_id=2898&busstop_id=123
+ *   busstop_id … 現在の対象バス停(降車地)。省略時は始発起点(from_seq=1)の一覧を返す。
+ * 【突合】 m_dia_course の始発停+発時刻で src_trip を特定。無ければ始発停のみでフォールバック。
  * 【配置】乗務記録アプリの api/ ディレクトリ(config.php と同じ場所)
  */
 
@@ -14,6 +15,7 @@ header('Access-Control-Allow-Origin: *');
 header('Cache-Control: no-store');
 
 $dia_course_id = isset($_GET['dia_course_id']) ? (int)$_GET['dia_course_id'] : 0;
+$cur_busstop   = isset($_GET['busstop_id']) ? (int)$_GET['busstop_id'] : 0;
 if ($dia_course_id <= 0) {
     http_response_code(400); echo json_encode(['error'=>'dia_course_id を指定してください'], JSON_UNESCAPED_UNICODE); exit;
 }
@@ -53,24 +55,67 @@ if (!$tripId) {
                if ($r = $t2->get_result()->fetch_assoc()) $tripId = (int)$r['src_trip_id']; $t2->close(); }
 }
 if (!$tripId) {
-    echo json_encode(['dia_course_id'=>$dia_course_id, 'start_name'=>$course['start_name'], 'count'=>0, 'fares'=>[],
+    echo json_encode(['dia_course_id'=>$dia_course_id, 'count'=>0, 'fares'=>[],
                       'note'=>'この便の運賃データが見つかりませんでした'], JSON_UNESCAPED_UNICODE);
     $mysqli->close(); exit;
 }
 
-// 3) 始発からの運賃一覧
-$f = $mysqli->prepare(
-  "SELECT f.to_seq, f.price, COALESCE(b.name, CONCAT('停', f.to_seq)) AS name
-   FROM src_fare f LEFT JOIN m_busstop b ON b.busstop_id = f.to_busstop_id
-   WHERE f.src_trip_id = ? AND f.from_seq = 1
-   ORDER BY f.to_seq");
-$f->bind_param('i', $tripId); $f->execute();
-$res = $f->get_result();
-$fares = [];
-while ($row = $res->fetch_assoc()) {
-    $fares[] = ['seq'=>(int)$row['to_seq'], 'name'=>$row['name'], 'price'=>(int)$row['price']];
+// 3) 現在停の seq を特定(指定が無ければ 始発からの一覧にフォールバック)
+$toSeq = 0; $toName = '';
+if ($cur_busstop > 0) {
+    $s = $mysqli->prepare(
+      "SELECT ts.seq, COALESCE(b.name,'') AS name
+       FROM src_trip_stop ts LEFT JOIN m_busstop b ON b.busstop_id = ts.busstop_id
+       WHERE ts.src_trip_id = ? AND ts.busstop_id = ? ORDER BY ts.seq LIMIT 1");
+    $s->bind_param('ii', $tripId, $cur_busstop); $s->execute();
+    if ($r = $s->get_result()->fetch_assoc()) { $toSeq = (int)$r['seq']; $toName = $r['name']; }
+    $s->close();
 }
-$f->close(); $mysqli->close();
 
-echo json_encode(['dia_course_id'=>$dia_course_id, 'start_name'=>$course['start_name'],
-                  'count'=>count($fares), 'fares'=>$fares], JSON_UNESCAPED_UNICODE);
+$fares = [];
+if ($toSeq > 1) {
+    // 各乗車停(from) → 現在停(to) の運賃。from停の名前は src_trip_stop 経由で解決。
+    $f = $mysqli->prepare(
+      "SELECT f.from_seq, f.price, COALESCE(b.name, CONCAT('停', f.from_seq)) AS name
+       FROM src_fare f
+       LEFT JOIN src_trip_stop ts ON ts.src_trip_id = f.src_trip_id AND ts.seq = f.from_seq
+       LEFT JOIN m_busstop b ON b.busstop_id = ts.busstop_id
+       WHERE f.src_trip_id = ? AND f.to_seq = ?
+       ORDER BY f.from_seq");
+    $f->bind_param('ii', $tripId, $toSeq); $f->execute();
+    $res = $f->get_result();
+    while ($row = $res->fetch_assoc()) {
+        $fares[] = ['seq'=>(int)$row['from_seq'], 'name'=>$row['name'], 'price'=>(int)$row['price']];
+    }
+    $f->close();
+    $mode = 'to_current';
+} else {
+    // フォールバック: 始発から各停までの運賃
+    $f = $mysqli->prepare(
+      "SELECT f.to_seq AS seq, f.price, COALESCE(b.name, CONCAT('停', f.to_seq)) AS name
+       FROM src_fare f LEFT JOIN m_busstop b ON b.busstop_id = f.to_busstop_id
+       WHERE f.src_trip_id = ? AND f.from_seq = 1
+       ORDER BY f.to_seq");
+    $f->bind_param('i', $tripId); $f->execute();
+    $res = $f->get_result();
+    while ($row = $res->fetch_assoc()) {
+        $fares[] = ['seq'=>(int)$row['seq'], 'name'=>$row['name'], 'price'=>(int)$row['price']];
+    }
+    $f->close();
+    $mode = 'from_origin';
+    $toName = $course['start_name'];
+}
+$mysqli->close();
+
+$note = '';
+if (!$fares) {
+    $note = ($mode === 'to_current')
+        ? 'この区間の運賃データがありません(区間運賃の取込が必要です)'
+        : '運賃データがありません';
+}
+echo json_encode([
+    'dia_course_id'=>$dia_course_id, 'mode'=>$mode,
+    'to_name'=>$toName, 'to_seq'=>$toSeq,
+    'start_name'=>$course['start_name'],
+    'count'=>count($fares), 'fares'=>$fares, 'note'=>$note,
+], JSON_UNESCAPED_UNICODE);

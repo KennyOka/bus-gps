@@ -211,6 +211,7 @@
   .nb-no{ font-family:var(--mono); font-size:22px; font-weight:800; min-width:56px; text-align:center; }
   .nb-dest{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:15px; font-weight:600; }
   .nb-t{ font-family:var(--mono); font-size:20px; font-weight:800; margin-left:auto; }
+  .fr-note{ font-size:12px; color:var(--ink-faint); padding:2px 4px 8px; text-align:center; }
 </style>
 </head>
 <body>
@@ -541,16 +542,19 @@
   // ③ 料金一覧(始発から各バス停まで)
   $('fareBtn').addEventListener('click', async ()=>{
     if(!course){ toast('コースが選択されていません'); return; }
-    $('frTitle').textContent='料金一覧（始発から）';
+    const cur=stops[targetIndex];
+    $('frTitle').textContent='料金一覧';
     $('frBody').innerHTML='<div class="dl-loading">取得中…</div>';
     $('fareOverlay').classList.add('show');
+    const q=`dia_course_id=${course.dia_course_id}` + (cur&&cur.busstop_id?`&busstop_id=${cur.busstop_id}`:'');
     try{
-      const r=await fetch(`${API_BASE}fares.php?dia_course_id=${course.dia_course_id}&_=${Date.now()}`, {cache:'no-store'});
+      const r=await fetch(`${API_BASE}fares.php?${q}&_=${Date.now()}`, {cache:'no-store'});
       const j=await r.json();
       if(!r.ok || j.error){ $('frBody').innerHTML='<div class="dl-loading">取得に失敗しました</div>'; return; }
+      // 現在停までの運賃(乗車停→現在停)。データが無い場合は始発からの一覧にフォールバック
+      $('frTitle').textContent = (j.mode==='to_current') ? `${j.to_name||'現在停'} までの運賃` : `料金一覧（${j.start_name||'始発'}から）`;
       if(!j.fares || !j.fares.length){ $('frBody').innerHTML=`<div class="dl-loading">${j.note||'運賃データがありません'}</div>`; return; }
-      $('frTitle').textContent=`料金一覧（${j.start_name||'始発'}から）`;
-      $('frBody').innerHTML='';
+      $('frBody').innerHTML = (j.mode==='to_current') ? '<div class="fr-note">乗車したバス停を見てください</div>' : '';
       j.fares.forEach(f=>{
         const row=document.createElement('div'); row.className='dl-row';
         row.innerHTML=`<div class="nb-no">${f.seq}</div><div class="nb-dest">${f.name||'—'}</div><div class="nb-t">${f.price}円</div>`;

@@ -124,8 +124,8 @@ function handle_shimabus_import_route(): void
         json_err('bad_date', 'target_date は YYYYMMDD で指定してください。', 422);
     }
     // 便数×外部API呼び出し＋ウェイトで数分かかるため、実行時間の上限を延ばす
-    @set_time_limit(900);
-    @ini_set('max_execution_time', '900');
+    @set_time_limit(3600);
+    @ini_set('max_execution_time', '3600');
 
     $mode  = (string) param('mode', 'preview');
     // 任意: 系統番号で絞り込み。起点signageが空の系統(例 山羊島 i=330 の系統2801)を、
@@ -214,30 +214,44 @@ function handle_shimabus_import_route(): void
         }
     }
 
-    // 運賃（始発=stop_sequence 1 から）
+    // 運賃
     // ※ fare.cgi は target_date が「YYYY-MM-DD」でないと内部エラー(ok:false)を返す。
     //   tripdetail 等の YYYYMMDD とは形式が異なるので必ず変換する。
     //   応答は fare が stop_sequence をキーにした連想配列: {"11":{stop_sequence,price,stop_id,...}, ...}
+    //
+    // fare_mode:
+    //   matrix(既定) … 乗車停ごとに取得し、全区間(乗車×降車)の運賃を保存。
+    //                   運転士が「今いる停まで、どの停から乗るといくら」を見るために必要。
+    //   origin        … 始発(from_seq=1)のみ。取得は速いが上記の用途には使えない。
+    $fareMode = (string) param('fare_mode', 'matrix');
+    if (!in_array($fareMode, ['matrix', 'origin'], true)) $fareMode = 'matrix';
+
     $fareDate = (new DateTime($targetDate))->format('Y-m-d');
-    $fares = [];  // trip_key => [ ['to_seq','to_stop_id','to_busstop_id','price'], ... ]
+    $fares = [];  // trip_key => [ ['from_seq','to_seq','to_stop_id','to_busstop_id','price'], ... ]
     $fareErrors = [];
     foreach ($tripData as $tripKey => $td) {
-        $f = shimabus_post('fare', ['trip_id' => $tripKey, 'stop_sequence' => 1, 'target_date' => $fareDate]);
-        usleep(SHIMABUS_SLEEP_US);
-        if (isset($f['ok']) && !$f['ok']) {   // 取得失敗は記録して次へ(取込全体は止めない)
-            $fareErrors[$tripKey] = (string) ($f['errmsg'] ?? 'unknown');
-            $fares[$tripKey] = [];
-            continue;
-        }
+        $maxSeq = 0;
+        foreach ($td['stops'] as $s) { if ($s['seq'] > $maxSeq) $maxSeq = $s['seq']; }
+        $fromList = ($fareMode === 'matrix') ? range(1, max(1, $maxSeq - 1)) : [1];
+
         $rows = [];
-        foreach (($f['fare'] ?? []) as $seqKey => $x) {
-            if (!is_array($x)) continue;
-            $rows[] = [
-                'to_seq'        => (int) ($x['stop_sequence'] ?? $seqKey),   // キー側もフォールバックに使う
-                'to_stop_id'    => (string) ($x['stop_id'] ?? ''),
-                'to_busstop_id' => (string) ($x['busstop_id'] ?? ''),
-                'price'         => (int) ($x['price'] ?? 0),
-            ];
+        foreach ($fromList as $fromSeq) {
+            $f = shimabus_post('fare', ['trip_id' => $tripKey, 'stop_sequence' => $fromSeq, 'target_date' => $fareDate]);
+            usleep(SHIMABUS_SLEEP_US);
+            if (isset($f['ok']) && !$f['ok']) {   // 取得失敗は記録して次へ(取込全体は止めない)
+                $fareErrors[$tripKey . '#' . $fromSeq] = (string) ($f['errmsg'] ?? 'unknown');
+                continue;
+            }
+            foreach (($f['fare'] ?? []) as $seqKey => $x) {
+                if (!is_array($x)) continue;
+                $rows[] = [
+                    'from_seq'      => $fromSeq,
+                    'to_seq'        => (int) ($x['stop_sequence'] ?? $seqKey),   // キー側もフォールバックに使う
+                    'to_stop_id'    => (string) ($x['stop_id'] ?? ''),
+                    'to_busstop_id' => (string) ($x['busstop_id'] ?? ''),
+                    'price'         => (int) ($x['price'] ?? 0),
+                ];
+            }
         }
         $fares[$tripKey] = $rows;
     }
@@ -252,8 +266,9 @@ function handle_shimabus_import_route(): void
         'busstops'      => count($busstopIds),
         'poles'         => count($poles),
         'pole_fallback' => $poleFallback, // i=停留所等の座標なし補完数
+        'fare_mode'     => $fareMode,                                // matrix=全区間 / origin=始発のみ
         'fare_rows'     => array_sum(array_map('count', $fares)),
-        'fare_errors'   => count($fareErrors),                       // 運賃が取れなかった便の数
+        'fare_errors'   => count($fareErrors),                       // 運賃が取れなかった(便#乗車停)の数
         'fare_error_sample' => array_slice($fareErrors, 0, 3, true), // 原因確認用(先頭3件)
     ];
 
@@ -313,8 +328,11 @@ function handle_shimabus_import_route(): void
         );
         $delStops = $db->prepare('DELETE FROM src_trip_stop WHERE src_trip_id = ?');
         $insStop  = $db->prepare('INSERT INTO src_trip_stop (src_trip_id, seq, busstop_id, arrival_time, departure_time) VALUES (?,?,?,?,?)');
-        $delFare  = $db->prepare('DELETE FROM src_fare WHERE src_trip_id = ? AND from_seq = 1');
-        $insFare  = $db->prepare('INSERT INTO src_fare (src_trip_id, from_seq, to_seq, to_busstop_id, price) VALUES (?,1,?,?,?)');
+        // matrix は全from_seqを、origin は from_seq=1 のみを置換
+        $delFare  = ($fareMode === 'matrix')
+            ? $db->prepare('DELETE FROM src_fare WHERE src_trip_id = ?')
+            : $db->prepare('DELETE FROM src_fare WHERE src_trip_id = ? AND from_seq = 1');
+        $insFare  = $db->prepare('INSERT INTO src_fare (src_trip_id, from_seq, to_seq, to_busstop_id, price) VALUES (?,?,?,?,?)');
 
         $tgt = (new DateTime($targetDate))->format('Y-m-d');
         $fareSkipped = 0;   // 標柱未解決などで登録できなかった運賃行
@@ -363,7 +381,7 @@ function handle_shimabus_import_route(): void
                     }
                 }
                 if ((int) $fr['to_seq'] <= 0) { $fareSkipped++; continue; }
-                $insFare->execute([$tripId, (int) $fr['to_seq'], $bsId, (int) $fr['price']]);
+                $insFare->execute([$tripId, (int) ($fr['from_seq'] ?? 1), (int) $fr['to_seq'], $bsId, (int) $fr['price']]);
             }
         }
 
