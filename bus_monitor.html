@@ -230,6 +230,8 @@
   #nextCourseMsg .nc-time{ font-family:var(--mono); font-size:26px; font-weight:900; }
   #nextCourseMsg.end{ background:rgba(53,214,138,.14); border-color:var(--ok); }
   #nextCourseMsg.end .nc-main{ color:var(--ok); font-size:18px; }
+  /* 各行は途中で折り返さず1行に収める(端末幅が足りない時だけ自動で縮小) */
+  #nextCourseMsg .nc-line{ display:block; white-space:nowrap; }
   /* ⑨ 後続バス */
   .fn-row{ margin-top:12px; width:100%; max-width:460px; display:flex; gap:8px; }
   .nextbus-btn{ flex:1; padding:14px 6px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:14px; font-weight:700; white-space:nowrap; }   /* ③ コースボタンと同等の大きさ */
@@ -863,8 +865,23 @@
     } else {
       el.className='show end';
       el.innerHTML=`<div class="nc-lbl">本日のダイヤ</div>`+
-        `<div class="nc-main">本日のダイヤは終了しました。<br>お気をつけて車庫へお戻りください。</div>`;
+        `<div class="nc-main"><span class="nc-line">本日のダイヤは終了しました。</span>`+
+        `<span class="nc-line">お気をつけて車庫へ</span><span class="nc-line">お戻りください。</span></div>`;
       speak('本日のダイヤは終了しました。お気をつけて車庫へお戻りください');
+    }
+    fitNcLines(el);
+  }
+  // 画面幅が狭い端末で各行が収まらない場合だけ文字を縮める(折り返して1文字だけ残るのを防ぐ)
+  function fitNcLines(el){
+    const main=el.querySelector('.nc-main'); if(!main) return;
+    main.style.fontSize='';
+    const lines=[...el.querySelectorAll('.nc-line')];
+    if(!lines.length) return;
+    const base=parseFloat(getComputedStyle(main).fontSize)||18;
+    const avail=main.clientWidth;
+    let need=0; lines.forEach(l=>{ if(l.scrollWidth>need) need=l.scrollWidth; });
+    if(need>avail && avail>0){
+      main.style.fontSize=Math.max(13, Math.floor(base*avail/need))+'px';
     }
   }
   function showFinishFx(stop){
