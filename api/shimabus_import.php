@@ -36,8 +36,25 @@ function shimabus_base(): string
     return rtrim($GLOBALS['CONFIG']['shimabus']['base'] ?? 'https://shimabus.busplus.jp/api', '/');
 }
 
-/** POST して JSON を連想配列で返す。失敗時は例外。 */
-function shimabus_post(string $name, array $params): array
+/** POST して JSON を連想配列で返す。失敗時は例外。
+ *  相手サーバーが一時的に 502/503 等を返すことがあるため、指数バックオフで数回リトライする。 */
+function shimabus_post(string $name, array $params, int $retries = 3): array
+{
+    for ($attempt = 0; ; $attempt++) {
+        try {
+            return shimabus_post_once($name, $params);
+        } catch (RuntimeException $e) {
+            // 一時的なエラー(5xx/通信断)のみリトライ。それ以外は即座に投げ直す。
+            $msg = $e->getMessage();
+            $transient = (bool) preg_match('/HTTP 5\d\d|通信失敗/u', $msg);
+            if (!$transient || $attempt >= $retries) throw $e;
+            sleep(2 << $attempt);   // 2秒 → 4秒 → 8秒
+        }
+    }
+}
+
+/** 実際の1回ぶんのPOST。 */
+function shimabus_post_once(string $name, array $params): array
 {
     $url  = shimabus_base() . '/' . $name . '.cgi';
     $body = http_build_query($params);
@@ -135,11 +152,20 @@ function handle_shimabus_import_route(): void
         json_err('bad_keito', 'keito は系統番号(数値)で指定してください。', 422);
     }
 
+    // 任意: 便を分割して取り込む(1回のリクエストを短くしたい時)。
+    //       例 trip_offset=0&trip_limit=30 → 先頭30便。次は trip_offset=30 …
+    $tripOffset = max(0, (int) param('trip_offset', 0));
+    $tripLimit  = max(0, (int) param('trip_limit', 0));   // 0=制限なし
+
     /* ---- 1) 取得（preview/commit 共通） ---- */
     $base = shimabus_post('signagebase', ['id' => $origin]);
     $originName = (string) ($base['stop_name'] ?? '');
     $service    = (string) ($base['service'] ?? '');
     $trips      = is_array($base['trips'] ?? null) ? $base['trips'] : [];
+    $tripsTotal = count($trips);
+    if ($tripOffset > 0 || $tripLimit > 0) {
+        $trips = array_slice($trips, $tripOffset, $tripLimit > 0 ? $tripLimit : null);
+    }
     usleep(SHIMABUS_SLEEP_US);
 
     $tripData = [];   // trip_key => ['route_key','route_name','headsign','stops'=>[...]]
@@ -229,17 +255,30 @@ function handle_shimabus_import_route(): void
     $fareDate = (new DateTime($targetDate))->format('Y-m-d');
     $fares = [];  // trip_key => [ ['from_seq','to_seq','to_stop_id','to_busstop_id','price'], ... ]
     $fareErrors = [];
+
+    // 運賃は「停留所の並び(パターン)」が同じ便なら同一。便ごとに総当たりすると
+    // 1便あたり停留所数-1回(73停なら72回)の呼び出しになり非現実的なため、
+    // パターン単位で1回だけ取得して同一パターンの便に使い回す。
+    $patternOf = [];    // trip_key => signature
+    $patternRep = [];   // signature => 代表trip_key
     foreach ($tripData as $tripKey => $td) {
+        $sig = implode(',', array_map(static fn($s) => $s['stop_id'], $td['stops']));
+        $patternOf[$tripKey] = $sig;
+        if (!isset($patternRep[$sig])) $patternRep[$sig] = $tripKey;
+    }
+
+    $fareByPattern = [];
+    foreach ($patternRep as $sig => $repTrip) {
         $maxSeq = 0;
-        foreach ($td['stops'] as $s) { if ($s['seq'] > $maxSeq) $maxSeq = $s['seq']; }
+        foreach ($tripData[$repTrip]['stops'] as $s) { if ($s['seq'] > $maxSeq) $maxSeq = $s['seq']; }
         $fromList = ($fareMode === 'matrix') ? range(1, max(1, $maxSeq - 1)) : [1];
 
         $rows = [];
         foreach ($fromList as $fromSeq) {
-            $f = shimabus_post('fare', ['trip_id' => $tripKey, 'stop_sequence' => $fromSeq, 'target_date' => $fareDate]);
+            $f = shimabus_post('fare', ['trip_id' => $repTrip, 'stop_sequence' => $fromSeq, 'target_date' => $fareDate]);
             usleep(SHIMABUS_SLEEP_US);
             if (isset($f['ok']) && !$f['ok']) {   // 取得失敗は記録して次へ(取込全体は止めない)
-                $fareErrors[$tripKey . '#' . $fromSeq] = (string) ($f['errmsg'] ?? 'unknown');
+                $fareErrors[$repTrip . '#' . $fromSeq] = (string) ($f['errmsg'] ?? 'unknown');
                 continue;
             }
             foreach (($f['fare'] ?? []) as $seqKey => $x) {
@@ -253,7 +292,10 @@ function handle_shimabus_import_route(): void
                 ];
             }
         }
-        $fares[$tripKey] = $rows;
+        $fareByPattern[$sig] = $rows;
+    }
+    foreach ($tripData as $tripKey => $td) {
+        $fares[$tripKey] = $fareByPattern[$patternOf[$tripKey]] ?? [];
     }
 
     $summary = [
@@ -263,10 +305,13 @@ function handle_shimabus_import_route(): void
         'service'       => $service,
         'target_date'   => $targetDate,
         'trips'         => count($tripData),
+        'trips_total'   => $tripsTotal,                              // signage上の全便数(分割時の目安)
+        'trip_offset'   => $tripOffset,
         'busstops'      => count($busstopIds),
         'poles'         => count($poles),
         'pole_fallback' => $poleFallback, // i=停留所等の座標なし補完数
         'fare_mode'     => $fareMode,                                // matrix=全区間 / origin=始発のみ
+        'fare_patterns' => count($patternRep),                       // 運賃を実際に取得したパターン数
         'fare_rows'     => array_sum(array_map('count', $fares)),
         'fare_errors'   => count($fareErrors),                       // 運賃が取れなかった(便#乗車停)の数
         'fare_error_sample' => array_slice($fareErrors, 0, 3, true), // 原因確認用(先頭3件)
