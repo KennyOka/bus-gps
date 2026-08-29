@@ -380,6 +380,7 @@
   let stops = [];         // course_stops [{seq,name,lat,lng,scheduled_time,...}]
   let targetIndex = 0;
   let lastAtStopIndex = -1;
+  let fareData=null;                      // コース選択時に先読みする三角表 {stops,matrix}
   let stillPos=null, stillSince=0;        // ① 停車検知
   let preEarlyWarnedIdx=-1;               // ⑥ 200m手前 早発注意(停ごと1回)
   let runStartAt=0;                       // ④ 開始直後は座標修正の通知を出さない
@@ -540,28 +541,50 @@
     }catch(e){ $('nbBody').innerHTML='<div class="dl-loading">通信エラー</div>'; }
   });
   // ③ 料金一覧(始発から各バス停まで)
+  // コース選択時に三角表を1回だけ取得して保持(以降はオフラインでも表示可)
+  async function prefetchFares(c){
+    fareData=null;
+    if(!c) return;
+    try{
+      const r=await fetch(`${API_BASE}fares.php?dia_course_id=${c.dia_course_id}&all=1&_=${Date.now()}`, {cache:'no-store'});
+      const j=await r.json();
+      if(r.ok && !j.error && j.matrix){ fareData=j; }
+    }catch(e){ /* 圏外等。押した時に再取得を試みる */ }
+  }
   $('fareBtn').addEventListener('click', async ()=>{
     if(!course){ toast('コースが選択されていません'); return; }
-    const cur=stops[targetIndex];
     $('frTitle').textContent='料金一覧';
-    $('frBody').innerHTML='<div class="dl-loading">取得中…</div>';
     $('fareOverlay').classList.add('show');
-    const q=`dia_course_id=${course.dia_course_id}` + (cur&&cur.busstop_id?`&busstop_id=${cur.busstop_id}`:'');
-    try{
-      const r=await fetch(`${API_BASE}fares.php?${q}&_=${Date.now()}`, {cache:'no-store'});
-      const j=await r.json();
-      if(!r.ok || j.error){ $('frBody').innerHTML='<div class="dl-loading">取得に失敗しました</div>'; return; }
-      // 現在停までの運賃(乗車停→現在停)。データが無い場合は始発からの一覧にフォールバック
-      $('frTitle').textContent = (j.mode==='to_current') ? `${j.to_name||'現在停'} までの運賃` : `料金一覧（${j.start_name||'始発'}から）`;
-      if(!j.fares || !j.fares.length){ $('frBody').innerHTML=`<div class="dl-loading">${j.note||'運賃データがありません'}</div>`; return; }
-      $('frBody').innerHTML = (j.mode==='to_current') ? '<div class="fr-note">乗車したバス停を見てください</div>' : '';
-      j.fares.forEach(f=>{
-        const row=document.createElement('div'); row.className='dl-row';
-        row.innerHTML=`<div class="nb-no">${f.seq}</div><div class="nb-dest">${f.name||'—'}</div><div class="nb-t">${f.price}円</div>`;
-        $('frBody').appendChild(row);
-      });
-    }catch(e){ $('frBody').innerHTML='<div class="dl-loading">通信エラー</div>'; }
+    if(!fareData){   // 先読みできていなければ、この場で取得を試みる
+      $('frBody').innerHTML='<div class="dl-loading">取得中…</div>';
+      await prefetchFares(course);
+    }
+    renderFares();
   });
+  function renderFares(){
+    const body=$('frBody');
+    if(!fareData || !fareData.matrix){ body.innerHTML='<div class="dl-loading">運賃データがありません（圏外の場合は電波の届く場所で再度お試しください）</div>'; return; }
+    const cur=stops[targetIndex];
+    // 現在停のseqを、先読みした停留所リストから busstop_id で解決
+    let toSeq=0, toName='';
+    if(cur && cur.busstop_id && fareData.stops){
+      const hit=fareData.stops.find(s=>s.busstop_id===cur.busstop_id);
+      if(hit){ toSeq=hit.seq; toName=hit.name; }
+    }
+    const nameOf=seq=>{ const s=(fareData.stops||[]).find(x=>x.seq===seq); return s?s.name:('停'+seq); };
+    const list=(toSeq && fareData.matrix[toSeq]) ? fareData.matrix[toSeq] : null;
+    if(!list || !list.length){
+      $('frTitle').textContent='料金一覧';
+      body.innerHTML=`<div class="dl-loading">${fareData.note||'この停までの運賃データがありません'}</div>`; return;
+    }
+    $('frTitle').textContent=`${toName||cur&&cur.name||'現在停'} までの運賃`;
+    body.innerHTML='<div class="fr-note">お客様が乗ったバス停を見てください</div>';
+    list.forEach(f=>{
+      const row=document.createElement('div'); row.className='dl-row';
+      row.innerHTML=`<div class="nb-no">${f.seq}</div><div class="nb-dest">${nameOf(f.seq)}</div><div class="nb-t">${f.price}円</div>`;
+      body.appendChild(row);
+    });
+  }
   // ③ ポップアップはどこを押しても閉じる
   ['nextBusOverlay','fareOverlay'].forEach(id=> $(id).addEventListener('click', ()=> $(id).classList.remove('show')));
 
@@ -583,6 +606,7 @@
       buildRail();
       resetMonUI();
       $('simStop').max=String(stops.length-1); $('simStop').value='0';
+      prefetchFares(c);            // 圏外対策: 運賃(三角表)をこの時点で1回だけ取得して保持
       show('scMon');
       if(mode==='gps') showConfirm();   // ① コース選択後に行き先確認ポップアップ
     }catch(e){ alert('通信エラー: '+e.message); }

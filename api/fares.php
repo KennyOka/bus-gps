@@ -60,6 +60,44 @@ if (!$tripId) {
     $mysqli->close(); exit;
 }
 
+// 3-A) all=1 … コース1本ぶんの三角表をまとめて返す(PWAが先読みして保持する用)
+//      圏外でも運賃を出せるよう、コース選択時に一括取得する。
+if (!empty($_GET['all'])) {
+    // 停留所(seq→busstop_id/名前)
+    $stops = [];
+    $s = $mysqli->prepare(
+      "SELECT ts.seq, ts.busstop_id, COALESCE(b.name, CONCAT('停', ts.seq)) AS name
+       FROM src_trip_stop ts LEFT JOIN m_busstop b ON b.busstop_id = ts.busstop_id
+       WHERE ts.src_trip_id = ? ORDER BY ts.seq");
+    $s->bind_param('i', $tripId); $s->execute();
+    $r = $s->get_result();
+    while ($x = $r->fetch_assoc()) {
+        $stops[] = ['seq'=>(int)$x['seq'], 'busstop_id'=>(int)$x['busstop_id'], 'name'=>$x['name']];
+    }
+    $s->close();
+
+    // 三角表: to_seq => [ {seq(from), price}, ... ]  ※名前はstopsから引く
+    $matrix = [];
+    $f = $mysqli->prepare(
+      "SELECT from_seq, to_seq, price FROM src_fare WHERE src_trip_id = ? ORDER BY to_seq, from_seq");
+    $f->bind_param('i', $tripId); $f->execute();
+    $r = $f->get_result();
+    $rows = 0;
+    while ($x = $r->fetch_assoc()) {
+        $matrix[(int)$x['to_seq']][] = ['seq'=>(int)$x['from_seq'], 'price'=>(int)$x['price']];
+        $rows++;
+    }
+    $f->close(); $mysqli->close();
+
+    echo json_encode([
+        'dia_course_id'=>$dia_course_id, 'mode'=>'all',
+        'start_name'=>$course['start_name'],
+        'stops'=>$stops, 'matrix'=>$matrix, 'count'=>$rows,
+        'note'=> $rows ? '' : '運賃データがありません(区間運賃の取込が必要です)',
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 // 3) 現在停の seq を特定(指定が無ければ 始発からの一覧にフォールバック)
 $toSeq = 0; $toName = '';
 if ($cur_busstop > 0) {
