@@ -221,6 +221,15 @@
     text-shadow:0 2px 14px rgba(0,0,0,.95), 0 0 8px rgba(0,0,0,.9); }
   .fx-tap{ position:absolute; z-index:2; left:0; right:0; bottom:calc(env(safe-area-inset-bottom) + 26px); text-align:center;
     font-size:13px; color:#fff; opacity:.85; text-shadow:0 2px 10px rgba(0,0,0,.9); }
+  /* 終点後の案内(次コース / 本日終了) */
+  #nextCourseMsg{ display:none; margin-top:14px; width:100%; max-width:460px; border-radius:12px; padding:14px 16px; text-align:center;
+    background:var(--panel-2); border:1px solid var(--line); }
+  #nextCourseMsg.show{ display:block; }
+  #nextCourseMsg .nc-lbl{ font-size:12px; color:var(--ink-dim); letter-spacing:.1em; }
+  #nextCourseMsg .nc-main{ font-size:20px; font-weight:800; line-height:1.45; margin-top:6px; }
+  #nextCourseMsg .nc-time{ font-family:var(--mono); font-size:26px; font-weight:900; }
+  #nextCourseMsg.end{ background:rgba(53,214,138,.14); border-color:var(--ok); }
+  #nextCourseMsg.end .nc-main{ color:var(--ok); font-size:18px; }
   /* ⑨ 後続バス */
   .fn-row{ margin-top:12px; width:100%; max-width:460px; display:flex; gap:8px; }
   .nextbus-btn{ flex:1; padding:14px 6px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:14px; font-weight:700; white-space:nowrap; }   /* ③ コースボタンと同等の大きさ */
@@ -295,6 +304,7 @@
           <div class="target-eta"><div class="t" id="targetEtaH">--</div><div class="t" id="targetEtaM">--</div></div>
         </div>
         <div class="next-prev" id="nextPrev"></div>
+        <div id="nextCourseMsg"></div>
         <div class="fn-row">
           <button class="nextbus-btn" id="nextBusBtn">🚌 後続バス</button>
           <button class="nextbus-btn" id="fareBtn">💰 料金一覧</button>
@@ -700,6 +710,7 @@
   function resetMonUI(){
     clearStateClasses();
     $('gpsNote').textContent='';   // ② 「停留所データを取得中…」等を消す
+    $('nextCourseMsg').className='';   // 前のコースの「次のコース」案内を消す
     $('stateTag').className='state-tag'; $('stateTag').textContent='運行前';
     $('diff').className='diff appr'; $('diff').textContent='--:--';
     $('caption').textContent='GPS開始 または デモで確認';
@@ -837,6 +848,25 @@
     ctx.fillStyle=grd; ctx.fillRect(0,0,W,H);
     fxRaf=requestAnimationFrame(fxDraw);
   }
+  // 終点後の案内: 次に乗務するコース(実車=category 3)を知らせる。無ければ本日終了。
+  function showNextCourseMsg(){
+    const el=$('nextCourseMsg'); if(!el) return;
+    const list=(courses||[]).filter(c=>c.category===3);
+    const idx=course ? list.findIndex(c=>c.dia_course_id===course.dia_course_id) : -1;
+    const nx=(idx>=0) ? list[idx+1] : null;
+    if(nx){
+      const t=(nx.departure_time||'').replace(/^0/,'');   // 07:30 → 7:30
+      el.className='show';
+      el.innerHTML=`<div class="nc-lbl">次のコース</div>`+
+        `<div class="nc-main">${nx.start_place||'—'} 始発　<span class="nc-time">${t||'--:--'}</span></div>`;
+      speak(`次のコースは、${nx.start_place||''}始発、${(t||'').replace(':','時')}分です`);
+    } else {
+      el.className='show end';
+      el.innerHTML=`<div class="nc-lbl">本日のダイヤ</div>`+
+        `<div class="nc-main">本日のダイヤは終了しました。<br>お気をつけて車庫へお戻りください。</div>`;
+      speak('本日のダイヤは終了しました。お気をつけて車庫へお戻りください');
+    }
+  }
   function showFinishFx(stop){
     const fx=$('finishFx'); if(!fx) return;
     $('fxSub').textContent = (stop && stop.name) ? `${stop.name}　お疲れさまでした` : 'お疲れさまでした';
@@ -850,7 +880,9 @@
     clearTimeout(fxTimer);
     fx.classList.add('out');
     setTimeout(()=>{ fx.classList.remove('show','out');
-      if(fxRaf){ cancelAnimationFrame(fxRaf); fxRaf=null; } }, 620);   // 非表示中は描画を止める
+      if(fxRaf){ cancelAnimationFrame(fxRaf); fxRaf=null; }            // 非表示中は描画を止める
+      showNextCourseMsg();                                             // フラッグの後に次コースを案内
+    }, 620);
   }
   ['pointerdown','click'].forEach(ev=> $('finishFx').addEventListener(ev, hideFinishFx));
   // ① 3秒以上停車 & DB座標と10m以上離れていれば 補正ボタンを点滅(地味に通知)
