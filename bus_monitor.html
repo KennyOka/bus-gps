@@ -205,6 +205,31 @@
   /* ① 座標修正が必要な時は補正ボタンを点滅(地味に通知) */
   #correctBtn.blink{ animation:corrBlink 1s ease-in-out infinite; }
   @keyframes corrBlink{ 0%,100%{ background:#3a1414; border-color:#7a2b2b; } 50%{ background:var(--early); border-color:var(--early); color:#fff; } }
+  /* 終点到着: チェッカーフラッグを振る全画面演出 */
+  #finishFx{ position:fixed; inset:0; z-index:115; display:none; align-items:center; justify-content:center; flex-direction:column;
+    background:radial-gradient(circle at 50% 42%, #0f2f22, #06110d 75%); overflow:hidden; }
+  #finishFx.show{ display:flex; animation:fxIn .35s ease both; }
+  #finishFx.out{ animation:fxOut .6s ease both; }
+  @keyframes fxIn{ from{opacity:0;} to{opacity:1;} }
+  @keyframes fxOut{ from{opacity:1;} to{opacity:0; visibility:hidden;} }
+  .flag-wrap{ perspective:700px; }
+  /* 市松模様の旗。振る動きは回転＋波打ちで表現 */
+  .flag{ width:min(74vw,340px); aspect-ratio:3/2; border-radius:6px; transform-origin:0% 50%;
+    background-image:
+      linear-gradient(45deg,#fff 25%,transparent 25%,transparent 75%,#fff 75%),
+      linear-gradient(45deg,#fff 25%,#111 25%,#111 75%,#fff 75%);
+    background-size:22% 22%; background-position:0 0, 11% 11%;
+    box-shadow:0 12px 40px rgba(0,0,0,.6); animation:flagWave 1s ease-in-out infinite; }
+  @keyframes flagWave{
+    0%   { transform:rotate(-16deg) skewY(4deg) scaleX(1); }
+    25%  { transform:rotate(10deg)  skewY(-6deg) scaleX(.94); }
+    50%  { transform:rotate(16deg)  skewY(4deg) scaleX(1); }
+    75%  { transform:rotate(-10deg) skewY(-6deg) scaleX(.94); }
+    100% { transform:rotate(-16deg) skewY(4deg) scaleX(1); }
+  }
+  .fx-title{ margin-top:26px; font-size:34px; font-weight:900; color:#fff; letter-spacing:.08em; text-shadow:0 2px 12px rgba(0,0,0,.6); }
+  .fx-sub{ margin-top:8px; font-size:17px; color:#a9e7c6; letter-spacing:.06em; }
+  .fx-tap{ position:absolute; left:0; right:0; bottom:calc(env(safe-area-inset-bottom) + 26px); text-align:center; font-size:13px; color:#7f9ab0; }
   /* ⑨ 後続バス */
   .fn-row{ margin-top:12px; width:100%; max-width:460px; display:flex; gap:8px; }
   .nextbus-btn{ flex:1; padding:14px 6px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:14px; font-weight:700; white-space:nowrap; }   /* ③ コースボタンと同等の大きさ */
@@ -356,6 +381,14 @@
       <div class="dl-head"><span id="frTitle">料金一覧</span><button id="frClose">✕</button></div>
       <div class="dl-body" id="frBody"></div>
     </div>
+  </div>
+
+  <!-- 終点到着の全画面演出 -->
+  <div id="finishFx">
+    <div class="flag-wrap"><div class="flag"></div></div>
+    <div class="fx-title">🏁 終点に到着</div>
+    <div class="fx-sub" id="fxSub">お疲れさまでした</div>
+    <div class="fx-tap">画面をタップで閉じます</div>
   </div>
 
   <!-- ⑤ お別れ / ⑥ フラッシュ -->
@@ -611,7 +644,7 @@
       if(mode==='gps') showConfirm();   // ① コース選択後に行き先確認ポップアップ
     }catch(e){ alert('通信エラー: '+e.message); }
   }
-  $('monBack').onclick=()=>{ liveStop(); stopGps(); show('scList'); };
+  $('monBack').onclick=()=>{ liveStop(); stopGps(); hideFinishFx(); show('scList'); };
 
   // ---- 定刻(絶対時刻)算出 ----
   function schedDate(stop){ const p=(stop.scheduled_time||'00:00:00').split(':').map(Number); const d=new Date(); d.setHours(p[0]||0,p[1]||0,p[2]||0,0); return d; }
@@ -704,7 +737,7 @@
       diff.classList.add('ok'); diff.textContent='🏁';
       $('caption').textContent='終点に到着しました。お疲れさまでした';
       setTargetName(dispName(st.stop)); setEta(hhmm(st.stop)); $('nextPrev').textContent='';
-      if(!terminalAnnounced){ speak('終点に到着しました。お疲れさまでした'); terminalAnnounced=true; stopRun(); }   // 終点でGPS停止+補正保存
+      if(!terminalAnnounced){ speak('終点に到着しました。お疲れさまでした'); terminalAnnounced=true; stopRun(); showFinishFx(st.stop); }   // 終点でGPS停止+補正保存+全画面演出
       updateRail(); return;
     }
     if(st.state==='finished'){
@@ -763,6 +796,21 @@
 
   // ⑥ 画面を1回フラッシュ
   function flashOnce(){ const f=$('flash'); if(!f) return; f.classList.remove('on'); void f.offsetWidth; f.classList.add('on'); }
+  // 終点到着: チェッカーフラッグを振る全画面演出(数秒で自動終了・タップでも閉じる)
+  let fxTimer=null;
+  function showFinishFx(stop){
+    const fx=$('finishFx'); if(!fx) return;
+    $('fxSub').textContent = (stop && stop.name) ? `${stop.name}　お疲れさまでした` : 'お疲れさまでした';
+    fx.classList.remove('out'); fx.classList.add('show');
+    clearTimeout(fxTimer); fxTimer=setTimeout(hideFinishFx, 6000);
+  }
+  function hideFinishFx(){
+    const fx=$('finishFx'); if(!fx || !fx.classList.contains('show')) return;
+    clearTimeout(fxTimer);
+    fx.classList.add('out');
+    setTimeout(()=>{ fx.classList.remove('show','out'); }, 620);
+  }
+  ['pointerdown','click'].forEach(ev=> $('finishFx').addEventListener(ev, hideFinishFx));
   // ① 3秒以上停車 & DB座標と10m以上離れていれば 補正ボタンを点滅(地味に通知)
   function checkFixMsg(lat,lng){
     const now=Date.now();
