@@ -297,6 +297,7 @@ function handle_shimabus_import_route(): void
         $insFare  = $db->prepare('INSERT INTO src_fare (src_trip_id, from_seq, to_seq, to_busstop_id, price) VALUES (?,1,?,?,?)');
 
         $tgt = (new DateTime($targetDate))->format('Y-m-d');
+        $fareSkipped = 0;   // 標柱未解決などで登録できなかった運賃行
         foreach ($tripData as $tripKey => $td) {
             // route
             $insRoute->execute([$td['route_key'], $td['route_name'] ?: null]);
@@ -329,10 +330,20 @@ function handle_shimabus_import_route(): void
             }
 
             // fare（置換, from_seq=1）
+            // 標柱→busstop_id が解決できない運賃行はスキップ(停留所ループと同様)。
+            // 未解決のまま NULL/0 を入れると to_busstop_id の制約違反でDBエラーになる。
             $delFare->execute([$tripId]);
             foreach (($fares[$tripKey] ?? []) as $fr) {
                 $bsId = $poleToBusstop[$fr['to_stop_id']] ?? null;
-                $insFare->execute([$tripId, $fr['to_seq'], $bsId, $fr['price']]);
+                if (empty($bsId)) {                                  // null / 0 はスキップ
+                    if (!empty($fr['to_busstop_id'])) {              // 応答の busstop_id で代替できる場合のみ使う
+                        $bsId = (int) $fr['to_busstop_id'];
+                    } else {
+                        $fareSkipped++; continue;
+                    }
+                }
+                if ((int) $fr['to_seq'] <= 0) { $fareSkipped++; continue; }
+                $insFare->execute([$tripId, (int) $fr['to_seq'], $bsId, (int) $fr['price']]);
             }
         }
 
@@ -342,5 +353,6 @@ function handle_shimabus_import_route(): void
         throw $e;
     }
 
+    $summary['fare_skipped'] = $fareSkipped;   // 登録できなかった運賃行(標柱未解決など)
     json_ok(['mode' => 'commit', 'summary' => $summary, 'committed' => true, 'import_batch_id' => $batchId]);
 }
