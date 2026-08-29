@@ -212,24 +212,15 @@
   #finishFx.out{ animation:fxOut .6s ease both; }
   @keyframes fxIn{ from{opacity:0;} to{opacity:1;} }
   @keyframes fxOut{ from{opacity:1;} to{opacity:0; visibility:hidden;} }
-  .flag-wrap{ perspective:700px; }
-  /* 市松模様の旗。振る動きは回転＋波打ちで表現 */
-  .flag{ width:min(74vw,340px); aspect-ratio:3/2; border-radius:6px; transform-origin:0% 50%;
-    background-image:
-      linear-gradient(45deg,#fff 25%,transparent 25%,transparent 75%,#fff 75%),
-      linear-gradient(45deg,#fff 25%,#111 25%,#111 75%,#fff 75%);
-    background-size:22% 22%; background-position:0 0, 11% 11%;
-    box-shadow:0 12px 40px rgba(0,0,0,.6); animation:flagWave 1s ease-in-out infinite; }
-  @keyframes flagWave{
-    0%   { transform:rotate(-16deg) skewY(4deg) scaleX(1); }
-    25%  { transform:rotate(10deg)  skewY(-6deg) scaleX(.94); }
-    50%  { transform:rotate(16deg)  skewY(4deg) scaleX(1); }
-    75%  { transform:rotate(-10deg) skewY(-6deg) scaleX(.94); }
-    100% { transform:rotate(-16deg) skewY(4deg) scaleX(1); }
-  }
-  .fx-title{ margin-top:26px; font-size:34px; font-weight:900; color:#fff; letter-spacing:.08em; text-shadow:0 2px 12px rgba(0,0,0,.6); }
-  .fx-sub{ margin-top:8px; font-size:17px; color:#a9e7c6; letter-spacing:.06em; }
-  .fx-tap{ position:absolute; left:0; right:0; bottom:calc(env(safe-area-inset-bottom) + 26px); text-align:center; font-size:13px; color:#7f9ab0; }
+  /* 画面いっぱいの市松模様が布のように波打つ(canvasで描画) */
+  #fxCanvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+  .fx-text{ position:relative; z-index:2; text-align:center; padding:0 18px; }
+  .fx-title{ font-size:38px; font-weight:900; color:#fff; letter-spacing:.08em;
+    text-shadow:0 3px 18px rgba(0,0,0,.95), 0 0 8px rgba(0,0,0,.9); }
+  .fx-sub{ margin-top:10px; font-size:18px; font-weight:700; color:#fff; letter-spacing:.05em;
+    text-shadow:0 2px 14px rgba(0,0,0,.95), 0 0 8px rgba(0,0,0,.9); }
+  .fx-tap{ position:absolute; z-index:2; left:0; right:0; bottom:calc(env(safe-area-inset-bottom) + 26px); text-align:center;
+    font-size:13px; color:#fff; opacity:.85; text-shadow:0 2px 10px rgba(0,0,0,.9); }
   /* ⑨ 後続バス */
   .fn-row{ margin-top:12px; width:100%; max-width:460px; display:flex; gap:8px; }
   .nextbus-btn{ flex:1; padding:14px 6px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:14px; font-weight:700; white-space:nowrap; }   /* ③ コースボタンと同等の大きさ */
@@ -385,9 +376,11 @@
 
   <!-- 終点到着の全画面演出 -->
   <div id="finishFx">
-    <div class="flag-wrap"><div class="flag"></div></div>
-    <div class="fx-title">🏁 終点に到着</div>
-    <div class="fx-sub" id="fxSub">お疲れさまでした</div>
+    <canvas id="fxCanvas"></canvas>
+    <div class="fx-text">
+      <div class="fx-title">🏁 終点に到着</div>
+      <div class="fx-sub" id="fxSub">お疲れさまでした</div>
+    </div>
     <div class="fx-tap">画面をタップで閉じます</div>
   </div>
 
@@ -796,19 +789,68 @@
 
   // ⑥ 画面を1回フラッシュ
   function flashOnce(){ const f=$('flash'); if(!f) return; f.classList.remove('on'); void f.offsetWidth; f.classList.add('on'); }
-  // 終点到着: チェッカーフラッグを振る全画面演出(数秒で自動終了・タップでも閉じる)
-  let fxTimer=null;
+  // 終点到着: 画面いっぱいのチェッカーフラッグが布のように波打つ演出
+  // (縦に並ぶ細い短冊を正弦波でずらし、傾きに応じた陰影を重ねて布の起伏を表現)
+  let fxTimer=null, fxRaf=null, fxPat=null, fxStart=0;
+  function fxBuildPattern(w,h,cell,pad){
+    const c=document.createElement('canvas'); c.width=w; c.height=h+pad*2;
+    const g=c.getContext('2d');
+    const cols=Math.ceil(w/cell), rows=Math.ceil((h+pad*2)/cell);
+    for(let i=0;i<cols;i++) for(let j=0;j<rows;j++){
+      g.fillStyle=((i+j)%2===0)?'#f5f5f5':'#0d0d0d';
+      g.fillRect(i*cell, j*cell, cell+1, cell+1);
+    }
+    return c;
+  }
+  function fxDraw(ts){
+    const cv=$('fxCanvas'); if(!cv || !$('finishFx').classList.contains('show')){ fxRaf=null; return; }
+    const ctx=cv.getContext('2d');
+    const dpr=Math.min(2, window.devicePixelRatio||1);
+    const W=cv.clientWidth, H=cv.clientHeight;
+    if(cv.width!==Math.round(W*dpr) || cv.height!==Math.round(H*dpr)){
+      cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr);
+      fxPat=null;
+    }
+    const pad=Math.round(H*0.28);
+    if(!fxPat) fxPat=fxBuildPattern(Math.round(W*dpr), Math.round(H*dpr), Math.round(Math.min(W,H)*dpr/7), Math.round(pad*dpr));
+    if(!fxStart) fxStart=ts;
+    const t=(ts-fxStart)/1000;
+
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,W,H);
+    const step=3;                       // 短冊の幅(px)
+    const A1=H*0.075, A2=H*0.035;       // 波の振幅
+    for(let x=0; x<W; x+=step){
+      const p=x/W;
+      const ph1=p*7.5 - t*2.2, ph2=p*3.1 + t*1.5;
+      const off=Math.sin(ph1)*A1 + Math.sin(ph2)*A2;
+      const slope=Math.cos(ph1)*A1*7.5/W + Math.cos(ph2)*A2*3.1/W;   // 傾き→陰影
+      ctx.drawImage(fxPat, Math.round(x*dpr),0, Math.round(step*dpr), fxPat.height,
+                            x, -pad + off, step+1, (H+pad*2));
+      const shade=Math.max(-1,Math.min(1, slope*2.2));
+      if(shade>0){ ctx.fillStyle='rgba(0,0,0,'+(shade*0.45).toFixed(3)+')'; ctx.fillRect(x,0,step+1,H); }
+      else if(shade<0){ ctx.fillStyle='rgba(255,255,255,'+((-shade)*0.18).toFixed(3)+')'; ctx.fillRect(x,0,step+1,H); }
+    }
+    // 中央の文字を読みやすくする薄い暗幕
+    const grd=ctx.createRadialGradient(W/2,H/2,H*0.05, W/2,H/2,H*0.55);
+    grd.addColorStop(0,'rgba(0,0,0,.55)'); grd.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=grd; ctx.fillRect(0,0,W,H);
+    fxRaf=requestAnimationFrame(fxDraw);
+  }
   function showFinishFx(stop){
     const fx=$('finishFx'); if(!fx) return;
     $('fxSub').textContent = (stop && stop.name) ? `${stop.name}　お疲れさまでした` : 'お疲れさまでした';
     fx.classList.remove('out'); fx.classList.add('show');
-    clearTimeout(fxTimer); fxTimer=setTimeout(hideFinishFx, 6000);
+    fxPat=null; fxStart=0;
+    if(!fxRaf) fxRaf=requestAnimationFrame(fxDraw);
+    clearTimeout(fxTimer); fxTimer=setTimeout(hideFinishFx, 7000);
   }
   function hideFinishFx(){
     const fx=$('finishFx'); if(!fx || !fx.classList.contains('show')) return;
     clearTimeout(fxTimer);
     fx.classList.add('out');
-    setTimeout(()=>{ fx.classList.remove('show','out'); }, 620);
+    setTimeout(()=>{ fx.classList.remove('show','out');
+      if(fxRaf){ cancelAnimationFrame(fxRaf); fxRaf=null; } }, 620);   // 非表示中は描画を止める
   }
   ['pointerdown','click'].forEach(ev=> $('finishFx').addEventListener(ev, hideFinishFx));
   // ① 3秒以上停車 & DB座標と10m以上離れていれば 補正ボタンを点滅(地味に通知)
