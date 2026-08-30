@@ -195,6 +195,8 @@
   .diff.late-r{ color:var(--early); }
   /* ⑤ アプリを閉じる */
   .close-btn{ width:100%; margin-top:26px; padding:13px; border-radius:11px; border:1px solid var(--line); background:transparent; color:var(--ink-dim); font-size:14px; font-weight:700; }
+  .manual-link{ display:block; width:100%; margin-top:10px; padding:13px; border-radius:11px; border:1px solid var(--line);
+    background:var(--panel-2); color:var(--ink); font-size:15px; font-weight:700; text-align:center; text-decoration:none; }
   #byeOverlay{ position:fixed; inset:0; z-index:120; display:none; align-items:center; justify-content:center; background:radial-gradient(circle at 50% 40%,#143a72,#0a1020 72%); }
   #byeOverlay.show{ display:flex; }
   #byeOverlay .bye{ font-size:40px; font-weight:900; color:#fff; letter-spacing:.06em; text-align:center; }
@@ -280,6 +282,7 @@
       </div>
       <div class="msg" id="setupMsg"></div>
       <button class="close-btn" id="closeAppBtn">✖ アプリを閉じる</button>
+      <a class="manual-link" href="./manual.html" target="_blank" rel="noopener">📖 使い方ガイドを見る</a>
     </div>
   </div>
 
