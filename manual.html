@@ -173,7 +173,11 @@
 <p class="cap">▲ ここを一度押すと、次の画面に進みます。</p>
 
 <div class="note tip"><b>アイコンが無いときは</b>
-Safariでドラサポを開き、下の「共有ボタン（□に↑）」→「ホーム画面に追加」を押してください。次からはアイコンから開けて、画面も広く使えます。</div>
+ドラサポをブラウザで開いてから、次のようにするとアイコンが作れます。次からはアイコンで開けて、画面も広く使えます。
+<div class="btns"><dl>
+  <dt>iPhone・iPad</dt><dd>Safariの下にある「共有ボタン（□に↑）」→「<strong>ホーム画面に追加</strong>」</dd>
+  <dt>Android</dt><dd>Chromeの右上にある「⋮（点3つ）」→「<strong>ホーム画面に追加</strong>」（「アプリをインストール」と出ることもあります）</dd>
+</dl></div></div>
 
 <h2 class="sec" id="select">2. ダイヤとコースを選ぶ</h2>
 <p>日付は<strong>今日の日付が自動で入って</strong>います。平日か土日祝かも自動で選ばれます。<strong>祝日のときだけ</strong>「土日祝」を自分で押してください。</p>
@@ -198,7 +202,7 @@ Safariでドラサポを開き、下の「共有ボタン（□に↑）」→�
   </li>
   <li>
     <h3>これから走るコースを押す</h3>
-    <p>実際に走るコースだけ押せます（回送などは灰色で押せません）。コースとコースの間が30分以上あくときは<strong>「休憩◯分」</strong>と出ます。</p>
+    <p>上から順に、その日に走るコースが並んでいます。<strong>これから走るコース</strong>を押してください。コースとコースの間が30分以上あくときは<strong>「休憩◯分」</strong>と出ます。</p>
     <div class="screen">
       <div class="bar"><span>コースを選択</span><span>7:41</span></div>
       <div class="body">
@@ -221,12 +225,27 @@ Safariでドラサポを開き、下の「共有ボタン（□に↑）」→�
   <div class="body" style="gap:10px;">
     <div style="text-align:center; color:#8A91A3; font-size:12px;">ダイヤ 31 ・ 平日</div>
     <div style="text-align:center; font-size:18px; font-weight:700;">この便は「東ヶ丘団地」行きです</div>
+    <div class="fld">
+      <div style="display:flex; justify-content:space-between; align-items:baseline;"><span class="lb">ダイヤ番号</span><span class="big">31</span></div>
+      <div style="display:flex; justify-content:space-between; align-items:baseline;"><span class="lb">タッチ番号</span><span class="big">3105</span></div>
+      <div style="display:flex; justify-content:space-between; align-items:baseline;"><span class="lb">デジタル番号</span><span class="big">52801</span></div>
+    </div>
     <div class="mark" style="background:#F0B93D; color:#241C00; text-align:center; font-weight:900; border-radius:8px; padding:10px;">☑ ⚠ 方向幕変更を確認</div>
     <div class="btn dark">▶ 開始</div>
     <div style="text-align:center; color:#8A91A3; font-size:12px;">キャンセル（コース選択へ）</div>
   </div>
 </div>
 <p class="cap">▲ レ点を付けないと開始できません。方向幕の入れ替え忘れを防ぐためです。</p>
+
+<h3>タッチ番号・デジタル番号を機器に入れる</h3>
+<p>この画面には、そのコースの<strong>タッチ番号</strong>と<strong>デジタル番号</strong>が出ています。発車前に、<strong>運賃機器と行先表示器（デジタル）に同じ番号を入れて</strong>ください。</p>
+<div class="btns">
+  <dl>
+    <dt>タッチ番号</dt><dd>運賃機器に入れる番号です（例：3105）</dd>
+    <dt>デジタル番号</dt><dd>行先表示器に入れる番号です（例：52801）。<strong>この番号が無いコースでは表示されません</strong>。そのときは入力の必要はありません。</dd>
+  </dl>
+</div>
+<div class="note warn"><b>番号は必ずここで確認</b>コースごとに番号が変わります。前のコースのままにしないよう、開始前にこの画面で確かめてください。</div>
 
 <h2 class="sec" id="screen">4. 運行中の画面の見かた</h2>
 <p>上から順に、いま何を見ればよいかを説明します。</p>
@@ -281,7 +300,6 @@ Safariでドラサポを開き、下の「共有ボタン（□に↑）」→�
 <h2 class="sec" id="early">6. 早発の知らせ</h2>
 <div class="note alert"><b>バス停の100m手前</b>定刻より30秒以上早いと「<strong>早発に注意してください</strong>」と声が出て、画面が3回光ります。</div>
 <div class="note alert"><b>バス停に着いたとき</b>定刻より早いと「<strong>早発です</strong>」と声が出て、画面が赤く点滅します。定刻になるまでお待ちください。</div>
-<p>終着のバス停では、そこで停まるので早発の知らせは出ません。</p>
 
 <h2 class="sec" id="buttons">7. 下のボタンの意味</h2>
 <div class="screen">
@@ -294,7 +312,7 @@ Safariでドラサポを開き、下の「共有ボタン（□に↑）」→�
   <dl>
     <dt>コース</dt><dd>コースを選びなおす画面に戻ります</dd>
     <dt>開始／停止</dt><dd>運行の開始と終了。押すと文字が変わります</dd>
-    <dt>◀前停・次停▶</dt><dd>対象のバス停がずれたとき、手で前後に直します</dd>
+    <dt>◀前停・次停▶</dt><dd>対象のバス停がずれたとき、手動で前後に直します</dd>
     <dt>デモ</dt><dd>練習用。実際の運行では使いません</dd>
     <dt>20 m</dt><dd>バス停に着いたと判断する範囲。ふだんは20mのままで結構です</dd>
     <dt>🔊大</dt><dd>音の大きさ（大・中・小・消）。押すたびに変わります</dd>
@@ -317,7 +335,7 @@ Safariでドラサポを開き、下の「共有ボタン（□に↑）」→�
 <p class="cap">▲ 電波が届かない場所でも表示できます。<strong>画面のどこを押しても閉じます。</strong></p>
 
 <h3>🚌 後続バス ― 次のバスを聞かれたら</h3>
-<p>いま停まっているバス停を、<strong>この後に通るバス</strong>を5本まで表示します（ダイヤ番号・行き先・時刻）。無いときは「後続バス無し」と出ます。</p>
+<p>いま停まっているバス停を、<strong>この後に通るバス</strong>を8本まで表示します（ダイヤ番号・行き先・時刻）。無いときは「後続バス無し」と出ます。</p>
 
 <h2 class="sec" id="finish">9. 終点に着いたら</h2>
 <p>終点に着くと、画面いっぱいに<strong>チェッカーフラッグ</strong>が出て「終点に到着」とお知らせします。数秒で自動的に消えます（画面を押しても消えます）。</p>
@@ -326,7 +344,8 @@ Safariでドラサポを開き、下の「共有ボタン（□に↑）」→�
 <div class="note tip"><b>その日の最後だったとき</b>「本日のダイヤは終了しました。お気をつけて車庫へお戻りください。」と表示します。</div>
 
 <h2 class="sec" id="fix">10. バス停の位置を直す</h2>
-<p>登録されているバス停の位置が実際とずれていることがあります。そのときは<strong>正しい位置に停まった状態</strong>で、赤い<strong>「📍補正」</strong>を押してください。いまの場所が新しい位置として登録されます。</p>
+<p>登録されているバス停の位置が実際とずれていることがあります。そのときは<strong>スマホがバス停の正面にある状態</strong>で、赤い<strong>「📍補正」</strong>を押してください。いまスマホがある場所が、新しい位置として登録されます。</p>
+<div class="note warn"><b>スマホの位置で記録されます</b>バスの大きさによって運転席の位置は変わります。位置を直すのは、<strong>スマホがバス停の標識の真横（正面）に来たとき</strong>に押してください。</div>
 
 <div class="note warn"><b>補正ボタンが点滅したら</b>バスが3秒以上停まっていて、登録位置と10m以上ずれていると、<strong>補正ボタンが赤く点滅</strong>してお知らせします。気づいたときに押してください（急がなくて結構です）。</div>
 
@@ -342,16 +361,18 @@ Safariでドラサポを開き、下の「共有ボタン（□に↑）」→�
 <h2 class="sec" id="trouble">11. 困ったときは</h2>
 <dl class="qa">
   <dt>声が出ない</dt>
-  <dd>下の「🔊」ボタンを押して「🔊大」にしてください。それでも出ないときは、iPhone本体の<strong>横のスイッチ（消音）</strong>と音量を確認してください。</dd>
+  <dd>下の「🔊」ボタンを押して「🔊大」にしてください。それでも出ないときは、本体の音量を上げてください。iPhoneは<strong>横のスイッチ（消音）</strong>、Androidは<strong>マナーモード</strong>も確認してください。</dd>
 
   <dt>バス停が実際と合っていない</dt>
   <dd>「◀前停」「次停▶」で正しいバス停に合わせてください。位置が毎回ずれるバス停は「📍補正」で直せます。</dd>
 
   <dt>「位置情報エラー」と出る</dt>
-  <dd>iPhoneの<strong>設定 → プライバシー → 位置情報サービス</strong>で、Safari（またはドラサポ）の位置情報を「<strong>Appの使用中は許可</strong>」にしてください。</dd>
+  <dd>本体の設定で、位置情報の使用を許可してください。<br>
+    <strong>iPhone・iPad</strong>：設定 → プライバシーとセキュリティ → 位置情報サービス → Safari（またはドラサポ）を「このAppの使用中のみ許可」<br>
+    <strong>Android</strong>：設定 → 位置情報 をオンにし、Chrome（またはドラサポ）の位置情報を「アプリの使用中のみ許可」</dd>
 
   <dt>画面の下にURLやボタンが出て邪魔</dt>
-  <dd>Safariのタブから開いているためです。<strong>ホーム画面のアイコン</strong>から開くと全画面になります（1番を参照）。</dd>
+  <dd>ブラウザ（Safari・Chrome）のタブから開いているためです。<strong>ホーム画面のアイコン</strong>から開くと全画面になります（1番を参照）。</dd>
 
   <dt>料金が表示されない</dt>
   <dd>電波の届く場所でコースを選び直してください。コースを選んだときに料金をまとめて読み込みます。</dd>
