@@ -240,6 +240,11 @@
   .nb-no{ font-family:var(--mono); font-size:22px; font-weight:800; min-width:56px; text-align:center; }
   .nb-dest{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:15px; font-weight:600; }
   .nb-t{ font-family:var(--mono); font-size:20px; font-weight:800; margin-left:auto; }
+  /* 後続バス: 8本を見渡せるよう行間を詰め、番号を小さくして行先を広く取る */
+  #nbBody .dl-row{ padding:7px 10px; margin-bottom:5px; gap:8px; }
+  #nbBody .nb-no{ font-size:15px; font-weight:700; min-width:34px; color:var(--ink-dim); }
+  #nbBody .nb-dest{ font-size:17px; font-weight:700; }
+  #nbBody .nb-t{ font-size:19px; }
   .fr-note{ font-size:12px; color:var(--ink-faint); padding:2px 4px 8px; text-align:center; }
 </style>
 </head>

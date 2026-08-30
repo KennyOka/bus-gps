@@ -1,7 +1,7 @@
 <?php
 /*
  * next_buses.php — 指定バス停(busstop_id)を、指定時刻以降に通過する後続バスを返す。
- * 「このバス停をこの後通るバス」を 定刻の近い順に最大5件。読み取り専用(SELECT)。
+ * 「このバス停をこの後通るバス」を 定刻の近い順に最大8件。読み取り専用(SELECT)。
  *
  * 【リクエスト】 GET next_buses.php?busstop_id=123&day_type=1&after=13:45
  *   busstop_id : バス停ID
@@ -44,7 +44,7 @@ $sql = "SELECT d.dia_no,
         WHERE cs.busstop_id = ? AND d.day_type = ? AND d.is_active = 1 AND c.category = 3
           AND cs.scheduled_time > ?
         ORDER BY cs.scheduled_time
-        LIMIT 5";
+        LIMIT 8";
 $stmt = $mysqli->prepare($sql);
 if (!$stmt) { http_response_code(500); echo json_encode(['error'=>'prepare失敗: ' . $mysqli->error], JSON_UNESCAPED_UNICODE); exit; }
 $stmt->bind_param('iis', $busstop_id, $day_type, $after);
