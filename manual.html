@@ -1,0 +1,371 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ドラサポ かんたん操作ガイド</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@700;900&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+  :root{
+    --sign:#0E6E4E;         /* 道路案内標識の緑 */
+    --sign-dark:#0A5239;
+    --warn:#E8A400;         /* 注意 */
+    --alert:#C42B18;        /* 早発などの警告 */
+    --paper:#F8F9F7;
+    --card:#FFFFFF;
+    --ink:#16201B;
+    --ink-2:#4A5A51;
+    --line:#DCE3DE;
+    --tint:#EAF2ED;
+    --shadow:0 1px 2px rgba(20,40,30,.06), 0 8px 24px rgba(20,40,30,.06);
+    --disp:"Zen Maru Gothic","Hiragino Maru Gothic ProN",system-ui,sans-serif;
+    --body:"Noto Sans JP","Hiragino Sans",system-ui,sans-serif;
+    --mono:ui-monospace,"SFMono-Regular",Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --sign:#4FC694; --sign-dark:#8FE3BE;
+      --warn:#F2B93B; --alert:#FF7A66;
+      --paper:#101614; --card:#18201D; --ink:#EDF3EF; --ink-2:#A8BBB0;
+      --line:#2A3733; --tint:#1D2926;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 26px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --sign:#4FC694; --sign-dark:#8FE3BE;
+    --warn:#F2B93B; --alert:#FF7A66;
+    --paper:#101614; --card:#18201D; --ink:#EDF3EF; --ink-2:#A8BBB0;
+    --line:#2A3733; --tint:#1D2926;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 26px rgba(0,0,0,.35);
+  }
+
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--paper); color:var(--ink); font-family:var(--body);
+        font-size:18px; line-height:1.95; -webkit-text-size-adjust:100%; }
+  .wrap{ max-width:680px; margin:0 auto; padding:0 20px 80px; }
+
+  /* 表紙 */
+  header{ background:var(--sign); color:#fff; padding:38px 20px 30px; }
+  header .inner{ max-width:680px; margin:0 auto; }
+  .eyebrow{ font-size:14px; letter-spacing:.18em; opacity:.9; }
+  h1{ font-family:var(--disp); font-weight:900; font-size:38px; line-height:1.3;
+      margin:6px 0 10px; text-wrap:balance; }
+  header p{ margin:0; font-size:17px; opacity:.95; }
+
+  /* もくじ */
+  nav{ background:var(--card); border:1px solid var(--line); border-radius:14px;
+       padding:18px 20px; margin:26px 0 34px; box-shadow:var(--shadow); }
+  nav h2{ font-family:var(--disp); font-size:19px; margin:0 0 10px; }
+  nav ol{ margin:0; padding-left:1.4em; }
+  nav li{ margin:6px 0; }
+  nav a{ color:var(--sign); text-decoration:none; border-bottom:1px solid transparent; }
+  nav a:hover, nav a:focus-visible{ border-bottom-color:currentColor; }
+
+  h2.sec{ font-family:var(--disp); font-weight:900; font-size:26px; line-height:1.45;
+          margin:52px 0 6px; padding-top:22px; border-top:3px solid var(--sign); text-wrap:balance; }
+  h3{ font-family:var(--disp); font-size:21px; margin:32px 0 6px; }
+  p{ margin:10px 0; }
+  strong{ font-weight:700; }
+
+  /* 手順 */
+  .steps{ list-style:none; margin:22px 0 0; padding:0; display:flex; flex-direction:column; gap:26px; }
+  .steps>li{ position:relative; padding-left:60px; }
+  .steps>li::before{ counter-increment:step; content:counter(step);
+    position:absolute; left:0; top:0; width:42px; height:42px; border-radius:50%;
+    background:var(--sign); color:#fff; font-family:var(--disp); font-weight:900; font-size:21px;
+    display:flex; align-items:center; justify-content:center; }
+  .steps{ counter-reset:step; }
+  .steps>li::after{ content:""; position:absolute; left:20px; top:50px; bottom:-26px; width:2px; background:var(--line); }
+  .steps>li:last-child::after{ display:none; }
+  .steps h3{ margin:6px 0 4px; font-size:22px; }
+
+  /* 画面の絵 */
+  .screen{ margin:14px 0 4px; border:2px solid var(--line); border-radius:16px; overflow:hidden;
+           background:#14181D; color:#EEF1F5; font-size:13px; line-height:1.6; box-shadow:var(--shadow); }
+  .screen .bar{ background:#1C2029; padding:8px 12px; font-weight:700; display:flex; justify-content:space-between; }
+  .screen .body{ padding:12px; display:flex; flex-direction:column; gap:8px; }
+  .fld{ background:#1C2029; border:1px solid #2E3440; border-radius:8px; padding:8px 10px; }
+  .fld .lb{ font-size:11px; color:#8A91A3; display:block; }
+  .row{ display:flex; gap:8px; }
+  .btn{ background:#232833; border:1px solid #2E3440; border-radius:8px; padding:9px 10px;
+        text-align:center; flex:1; font-weight:700; }
+  .btn.dark{ background:#EEF1F5; color:#14181D; }
+  .btn.green{ background:#35D68A; color:#062F1C; }
+  .btn.red{ background:#3A1414; border-color:#7A2B2B; color:#FFB4B4; }
+  .mark{ outline:3px solid var(--alert); outline-offset:2px; border-radius:8px; position:relative; }
+  .callout{ display:inline-block; background:var(--alert); color:#fff; font-size:12px; font-weight:700;
+            border-radius:20px; padding:2px 10px; margin-top:6px; }
+  .cap{ font-size:15px; color:var(--ink-2); margin:6px 0 0; }
+  .big{ font-family:var(--mono); font-size:26px; font-weight:700; }
+
+  /* 注意・ヒント */
+  .note{ border-radius:12px; padding:14px 16px; margin:16px 0; border-left:6px solid; background:var(--card); box-shadow:var(--shadow); }
+  .note.warn{ border-color:var(--warn); }
+  .note.alert{ border-color:var(--alert); }
+  .note.tip{ border-color:var(--sign); }
+  .note b{ display:block; font-family:var(--disp); font-size:18px; margin-bottom:2px; }
+
+  /* 状態の一覧表 */
+  .states{ width:100%; border-collapse:collapse; margin:16px 0; font-size:17px; }
+  .states th, .states td{ border-bottom:1px solid var(--line); padding:12px 8px; text-align:left; vertical-align:top; }
+  .states th{ font-family:var(--disp); color:var(--ink-2); font-size:15px; }
+  .pill{ display:inline-block; border-radius:20px; padding:3px 12px; font-weight:700; font-size:16px; white-space:nowrap; }
+  .pill.ok{ background:#35D68A; color:#062F1C; }
+  .pill.y{ background:#F0B93D; color:#241C00; }
+  .pill.o{ background:#FF8C3A; color:#2A1400; }
+  .pill.r{ background:#C42B18; color:#fff; }
+  .pill.e{ background:#C42B18; color:#fff; }
+
+  .btns dl{ margin:14px 0; display:grid; grid-template-columns:auto 1fr; gap:10px 16px; align-items:baseline; }
+  .btns dt{ font-family:var(--disp); font-weight:700; white-space:nowrap; }
+  .btns dd{ margin:0; color:var(--ink-2); }
+
+  .qa{ margin:18px 0; }
+  .qa dt{ font-family:var(--disp); font-size:19px; margin-top:20px; }
+  .qa dd{ margin:4px 0 0; color:var(--ink-2); }
+
+  footer{ margin-top:60px; padding-top:24px; border-top:1px solid var(--line); color:var(--ink-2); font-size:15px; }
+
+  @media print{
+    body{ background:#fff; font-size:12pt; }
+    header{ background:#fff; color:#000; border-bottom:3px solid #000; }
+    nav, .screen{ box-shadow:none; }
+    h2.sec{ break-before:page; }
+  }
+</style>
+
+<header>
+  <div class="inner">
+    <div class="eyebrow">しまバス ドライバーズサポート</div>
+    <h1>ドラサポ かんたん操作ガイド</h1>
+    <p>はじめての方でも、この順番どおりに押せば使えます。</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+<nav>
+  <h2>もくじ</h2>
+  <ol>
+    <li><a href="#start">アプリを開く</a></li>
+    <li><a href="#select">ダイヤとコースを選ぶ</a></li>
+    <li><a href="#confirm">行き先を確認して開始する</a></li>
+    <li><a href="#screen">運行中の画面の見かた</a></li>
+    <li><a href="#depart">始発の発車カウントダウン</a></li>
+    <li><a href="#early">早発の知らせ</a></li>
+    <li><a href="#buttons">下のボタンの意味</a></li>
+    <li><a href="#fare">料金と後続バスを調べる</a></li>
+    <li><a href="#finish">終点に着いたら</a></li>
+    <li><a href="#fix">バス停の位置を直す</a></li>
+    <li><a href="#trouble">困ったときは</a></li>
+  </ol>
+</nav>
+
+<h2 class="sec" id="start">1. アプリを開く</h2>
+<p>ホーム画面の<strong>ドラサポのアイコン</strong>を押します。最初に青い画面が出たら、<strong>画面のどこでも一度押して</strong>ください。</p>
+
+<div class="screen">
+  <div class="body" style="align-items:center; gap:4px; padding:26px 12px;">
+    <div style="font-size:34px;">🚌</div>
+    <div style="font-size:20px; font-weight:700;">ドラサポ</div>
+    <div class="mark" style="margin-top:10px; padding:6px 14px; color:#CFE0F5;">画面をタップしてスタート</div>
+  </div>
+</div>
+<p class="cap">▲ ここを一度押すと、次の画面に進みます。</p>
+
+<div class="note tip"><b>アイコンが無いときは</b>
+Safariでドラサポを開き、下の「共有ボタン（□に↑）」→「ホーム画面に追加」を押してください。次からはアイコンから開けて、画面も広く使えます。</div>
+
+<h2 class="sec" id="select">2. ダイヤとコースを選ぶ</h2>
+<p>日付は<strong>今日の日付が自動で入って</strong>います。平日か土日祝かも自動で選ばれます。<strong>祝日のときだけ</strong>「土日祝」を自分で押してください。</p>
+
+<ol class="steps">
+  <li>
+    <h3>ダイヤ番号を入れる</h3>
+    <p>数字を入れて、右の<strong>「コース一覧を取得」</strong>を押します。</p>
+    <div class="screen">
+      <div class="bar"><span>🚌 しまバスドラサポ</span><span>7:41</span></div>
+      <div class="body">
+        <div class="fld"><span class="lb">日付</span><span class="big">2026/08/31</span></div>
+        <div class="row"><div class="btn dark">平日</div><div class="btn">土日祝</div></div>
+        <div class="btn">📋 ダイヤ一覧を表示</div>
+        <div class="row">
+          <div class="fld mark" style="flex:2;"><span class="lb">ダイヤ番号</span>31</div>
+          <div class="btn dark" style="flex:3;">コース一覧を取得</div>
+        </div>
+      </div>
+    </div>
+    <p class="cap">▲ ダイヤ番号がわからないときは<strong>「📋 ダイヤ一覧を表示」</strong>を押すと、番号と始発・終着の時刻が一覧で出ます。</p>
+  </li>
+  <li>
+    <h3>これから走るコースを押す</h3>
+    <p>実際に走るコースだけ押せます（回送などは灰色で押せません）。コースとコースの間が30分以上あくときは<strong>「休憩◯分」</strong>と出ます。</p>
+    <div class="screen">
+      <div class="bar"><span>コースを選択</span><span>7:41</span></div>
+      <div class="body">
+        <div class="fld mark" style="display:flex; align-items:center; gap:10px;">
+          <span>1</span><span style="flex:1; font-weight:700;">崎原 → 東ヶ丘団地</span><span class="big">7:12</span>
+        </div>
+        <div style="text-align:center; font-weight:700; color:#fff;">― 休憩 35分 ―</div>
+        <div class="fld" style="display:flex; align-items:center; gap:10px;">
+          <span>2</span><span style="flex:1; font-weight:700;">東ヶ丘団地 → 崎原</span><span class="big">8:05</span>
+        </div>
+      </div>
+    </div>
+  </li>
+</ol>
+
+<h2 class="sec" id="confirm">3. 行き先を確認して開始する</h2>
+<p>コースを押すと、確認の画面が出ます。<strong>方向幕を変えたら</strong>、四角いところを押してレ点を付けます。レ点を付けると<strong>「▶ 開始」</strong>が押せるようになります。</p>
+
+<div class="screen">
+  <div class="body" style="gap:10px;">
+    <div style="text-align:center; color:#8A91A3; font-size:12px;">ダイヤ 31 ・ 平日</div>
+    <div style="text-align:center; font-size:18px; font-weight:700;">この便は「東ヶ丘団地」行きです</div>
+    <div class="mark" style="background:#F0B93D; color:#241C00; text-align:center; font-weight:900; border-radius:8px; padding:10px;">☑ ⚠ 方向幕変更を確認</div>
+    <div class="btn dark">▶ 開始</div>
+    <div style="text-align:center; color:#8A91A3; font-size:12px;">キャンセル（コース選択へ）</div>
+  </div>
+</div>
+<p class="cap">▲ レ点を付けないと開始できません。方向幕の入れ替え忘れを防ぐためです。</p>
+
+<h2 class="sec" id="screen">4. 運行中の画面の見かた</h2>
+<p>上から順に、いま何を見ればよいかを説明します。</p>
+
+<div class="screen">
+  <div class="body" style="gap:10px;">
+    <div style="font-weight:700;">崎原(7:12) → 東ヶ丘団地(7:57)</div>
+    <div style="text-align:center;"><span class="pill ok">✅ 正常運行</span></div>
+    <div class="fld" style="display:flex; align-items:center; gap:10px;">
+      <div style="flex:1;">
+        <div style="font-size:26px; font-weight:900;">田平</div>
+        <div style="font-weight:700;">現在地から 約 120 m</div>
+      </div>
+      <div class="big" style="line-height:1;">07<br>14</div>
+    </div>
+    <div style="text-align:center; font-size:17px; font-weight:700;">次々は 賀屋入口（07:16）</div>
+  </div>
+</div>
+
+<div class="btns">
+  <dl>
+    <dt>いちばん上</dt><dd>このコースの<strong>始発地と時刻 → 終着地と時刻</strong></dd>
+    <dt>丸い札</dt><dd>いまの状態（正常運行・遅れ・早発注意 など）</dd>
+    <dt>大きな文字</dt><dd><strong>次に停まるバス停の名前</strong>と、その<strong>定刻</strong>（右に時・分の2段）</dd>
+    <dt>その下</dt><dd>そのバス停まで<strong>あと何メートル</strong>か</dd>
+    <dt>いちばん下</dt><dd><strong>その次</strong>のバス停と時刻</dd>
+  </dl>
+</div>
+
+<h3>状態の表示</h3>
+<table class="states">
+  <tr><th>表示</th><th>意味</th></tr>
+  <tr><td><span class="pill ok">✅ 正常運行</span></td><td>遅れは3分未満。数字は出ません。<strong>そのままでOK</strong>です。</td></tr>
+  <tr><td><span class="pill y">ちょい遅れ！</span></td><td>3分以上6分未満の遅れ</td></tr>
+  <tr><td><span class="pill o">だいぶ遅れ！</span></td><td>6分以上10分未満の遅れ</td></tr>
+  <tr><td><span class="pill r">大幅遅延！</span></td><td>10分以上の遅れ（赤で表示）</td></tr>
+  <tr><td><span class="pill e">🚨 早発注意</span></td><td>定刻より早い。<strong>画面が赤く点滅</strong>します。</td></tr>
+</table>
+<p class="note tip"><b>遅れは気にしすぎなくて大丈夫</b>この機械は<strong>早発を防ぐため</strong>のものです。遅れは表示するだけで、警告音は鳴りません。</p>
+
+<h2 class="sec" id="depart">5. 始発の発車カウントダウン</h2>
+<p>始発のバス停で「開始」を押すと、発車時刻までを知らせます。</p>
+<div class="btns">
+  <dl>
+    <dt>1分前</dt><dd>「定刻1分前です」と声でお知らせ</dd>
+    <dt>残り10秒</dt><dd>画面いっぱいに <strong>10・9・8…</strong> と数字が出ます</dd>
+    <dt>0秒</dt><dd>「定刻です」と声でお知らせ。ここから発車です。</dd>
+  </dl>
+</div>
+<p>始発ではないバス停で開始したときは、カウントダウンは出ません。かわりに<strong>いまいる場所にいちばん近いバス停</strong>から自動で始まります。</p>
+
+<h2 class="sec" id="early">6. 早発の知らせ</h2>
+<div class="note alert"><b>バス停の100m手前</b>定刻より30秒以上早いと「<strong>早発に注意してください</strong>」と声が出て、画面が3回光ります。</div>
+<div class="note alert"><b>バス停に着いたとき</b>定刻より早いと「<strong>早発です</strong>」と声が出て、画面が赤く点滅します。定刻になるまでお待ちください。</div>
+<p>終着のバス停では、そこで停まるので早発の知らせは出ません。</p>
+
+<h2 class="sec" id="buttons">7. 下のボタンの意味</h2>
+<div class="screen">
+  <div class="body">
+    <div class="row"><div class="btn">コース</div><div class="btn dark">開始</div><div class="btn">◀前停</div><div class="btn">次停▶</div></div>
+    <div class="row"><div class="btn">デモ</div><div class="btn">20 m</div><div class="btn">🔊大</div><div class="btn">🗣停名</div><div class="btn red">📍補正</div></div>
+  </div>
+</div>
+<div class="btns">
+  <dl>
+    <dt>コース</dt><dd>コースを選びなおす画面に戻ります</dd>
+    <dt>開始／停止</dt><dd>運行の開始と終了。押すと文字が変わります</dd>
+    <dt>◀前停・次停▶</dt><dd>対象のバス停がずれたとき、手で前後に直します</dd>
+    <dt>デモ</dt><dd>練習用。実際の運行では使いません</dd>
+    <dt>20 m</dt><dd>バス停に着いたと判断する範囲。ふだんは20mのままで結構です</dd>
+    <dt>🔊大</dt><dd>音の大きさ（大・中・小・消）。押すたびに変わります</dd>
+    <dt>🗣停名</dt><dd>「次は◯◯です」の読み上げの入切。切っても早発の警告は鳴ります</dd>
+    <dt>📍補正</dt><dd>バス停の位置を直します（<a href="#fix">10番</a>を参照）</dd>
+  </dl>
+</div>
+
+<h2 class="sec" id="fare">8. 料金と後続バスを調べる</h2>
+<h3>💰 料金一覧 ― お客様の運賃を調べる</h3>
+<p>ボタンを押すと「<strong>いま停まっているバス停までの運賃</strong>」が出ます。お客様が「久里町から乗った」と言われたら、<strong>一覧の「久里町」の金額</strong>がその方の運賃です。</p>
+<div class="screen">
+  <div class="bar"><span>朝戸入口 までの運賃</span><span>✕</span></div>
+  <div class="body">
+    <div style="text-align:center; color:#8A91A3; font-size:12px;">お客様が乗ったバス停を見てください</div>
+    <div class="fld" style="display:flex; gap:10px;"><span>1</span><span style="flex:1;">こしゅく第１</span><span class="big">300円</span></div>
+    <div class="fld mark" style="display:flex; gap:10px;"><span>2</span><span style="flex:1;">久里町</span><span class="big">170円</span></div>
+  </div>
+</div>
+<p class="cap">▲ 電波が届かない場所でも表示できます。<strong>画面のどこを押しても閉じます。</strong></p>
+
+<h3>🚌 後続バス ― 次のバスを聞かれたら</h3>
+<p>いま停まっているバス停を、<strong>この後に通るバス</strong>を5本まで表示します（ダイヤ番号・行き先・時刻）。無いときは「後続バス無し」と出ます。</p>
+
+<h2 class="sec" id="finish">9. 終点に着いたら</h2>
+<p>終点に着くと、画面いっぱいに<strong>チェッカーフラッグ</strong>が出て「終点に到着」とお知らせします。数秒で自動的に消えます（画面を押しても消えます）。</p>
+<p>そのあと、続けて次の案内が出ます。</p>
+<div class="note tip"><b>次のコースがあるとき</b>「次のコース　◯◯ 始発　13:30」と表示と声でお知らせします。</div>
+<div class="note tip"><b>その日の最後だったとき</b>「本日のダイヤは終了しました。お気をつけて車庫へお戻りください。」と表示します。</div>
+
+<h2 class="sec" id="fix">10. バス停の位置を直す</h2>
+<p>登録されているバス停の位置が実際とずれていることがあります。そのときは<strong>正しい位置に停まった状態</strong>で、赤い<strong>「📍補正」</strong>を押してください。いまの場所が新しい位置として登録されます。</p>
+
+<div class="note warn"><b>補正ボタンが点滅したら</b>バスが3秒以上停まっていて、登録位置と10m以上ずれていると、<strong>補正ボタンが赤く点滅</strong>してお知らせします。気づいたときに押してください（急がなくて結構です）。</div>
+
+<div class="btns">
+  <dl>
+    <dt>押すタイミング</dt><dd>そのバス停に<strong>停車しているとき</strong></dd>
+    <dt>GPSが悪いとき</dt><dd>「精度が低いため補正できません」と出ます。少し待ってもう一度押してください</dd>
+    <dt>間違えたとき</dt><dd><strong>もう一度押す</strong>と取り消せます（元の位置に戻ります）</dd>
+    <dt>保存</dt><dd>運行を停止したとき、または終点に着いたあとに自動で保存されます</dd>
+  </dl>
+</div>
+
+<h2 class="sec" id="trouble">11. 困ったときは</h2>
+<dl class="qa">
+  <dt>声が出ない</dt>
+  <dd>下の「🔊」ボタンを押して「🔊大」にしてください。それでも出ないときは、iPhone本体の<strong>横のスイッチ（消音）</strong>と音量を確認してください。</dd>
+
+  <dt>バス停が実際と合っていない</dt>
+  <dd>「◀前停」「次停▶」で正しいバス停に合わせてください。位置が毎回ずれるバス停は「📍補正」で直せます。</dd>
+
+  <dt>「位置情報エラー」と出る</dt>
+  <dd>iPhoneの<strong>設定 → プライバシー → 位置情報サービス</strong>で、Safari（またはドラサポ）の位置情報を「<strong>Appの使用中は許可</strong>」にしてください。</dd>
+
+  <dt>画面の下にURLやボタンが出て邪魔</dt>
+  <dd>Safariのタブから開いているためです。<strong>ホーム画面のアイコン</strong>から開くと全画面になります（1番を参照）。</dd>
+
+  <dt>料金が表示されない</dt>
+  <dd>電波の届く場所でコースを選び直してください。コースを選んだときに料金をまとめて読み込みます。</dd>
+
+  <dt>間違ったコースで開始してしまった</dt>
+  <dd>下の「コース」を押して、選び直してください。</dd>
+
+  <dt>使い終わったら</dt>
+  <dd>最初の画面の下にある「✖ アプリを閉じる」を押してください。</dd>
+</dl>
+
+<footer>
+  <p>ドラサポ かんたん操作ガイド　©2026 Hillsfactory</p>
+  <p>わからないことがあれば、遠慮なく担当者までお声がけください。</p>
+</footer>
+
+</div>
