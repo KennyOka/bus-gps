@@ -51,6 +51,16 @@
       margin:6px 0 10px; text-wrap:balance; }
   header p{ margin:0; font-size:17px; opacity:.95; }
 
+  /* ドラサポへ戻る */
+  .back-btn{ display:inline-block; margin-top:18px; padding:14px 22px; border-radius:12px;
+    background:#fff; color:var(--sign-dark); font-family:var(--disp); font-weight:900; font-size:18px;
+    text-decoration:none; box-shadow:0 2px 10px rgba(0,0,0,.18); }
+  .back-fab{ position:fixed; right:14px; bottom:14px; z-index:10; padding:14px 18px; border-radius:30px;
+    background:var(--sign); color:#fff; font-family:var(--disp); font-weight:900; font-size:16px;
+    text-decoration:none; box-shadow:0 6px 20px rgba(0,0,0,.3); }
+  .back-fab:focus-visible, .back-btn:focus-visible{ outline:3px solid var(--warn); outline-offset:2px; }
+  @media print{ .back-btn, .back-fab{ display:none; } }
+
   /* もくじ */
   nav{ background:var(--card); border:1px solid var(--line); border-radius:14px;
        padding:18px 20px; margin:26px 0 34px; box-shadow:var(--shadow); }
@@ -138,8 +148,10 @@
     <div class="eyebrow">しまバス ドライバーズサポート</div>
     <h1>ドラサポ かんたん操作ガイド</h1>
     <p>はじめての方でも、この順番どおりに押せば使えます。</p>
+    <a class="back-btn" id="backTop" href="./bus_monitor.html">← ドラサポにもどる</a>
   </div>
 </header>
+<a class="back-fab" id="backFab" href="./bus_monitor.html">← ドラサポにもどる</a>
 
 <div class="wrap">
 
@@ -388,5 +400,18 @@
   <p>ドラサポ かんたん操作ガイド　©2026 Hillsfactory</p>
   <p>わからないことがあれば、遠慮なく担当者までお声がけください。</p>
 </footer>
+
+<script>
+  // 「ドラサポにもどる」の動き:
+  //   別タブ/別ウィンドウで開かれた場合はそのタブを閉じる。
+  //   同じ画面で開かれた場合(ホーム画面のアプリなど)は前の画面に戻す。
+  //   どちらもできないときは、リンク先(bus_monitor.html)へそのまま移動する。
+  document.querySelectorAll('.back-btn, .back-fab').forEach(function(a){
+    a.addEventListener('click', function(e){
+      if (window.opener) { e.preventDefault(); window.close(); return; }
+      if (window.history.length > 1) { e.preventDefault(); window.history.back(); }
+    });
+  });
+</script>
 
 </div>
