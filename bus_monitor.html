@@ -649,7 +649,7 @@
       if(mode==='gps') showConfirm();   // ① コース選択後に行き先確認ポップアップ
     }catch(e){ alert('通信エラー: '+e.message); }
   }
-  $('monBack').onclick=()=>{ liveStop(); stopGps(); hideFinishFx(); show('scList'); };
+  $('monBack').onclick=()=>{ flushCorrections(); liveStop(); stopGps(); hideFinishFx(); show('scList'); };   // 未保存の補正を取りこぼさない
 
   // ---- 定刻(絶対時刻)算出 ----
   function schedDate(stop){ const p=(stop.scheduled_time||'00:00:00').split(':').map(Number); const d=new Date(); d.setHours(p[0]||0,p[1]||0,p[2]||0,0); return d; }
@@ -773,8 +773,10 @@
       $('caption').textContent=`定刻(${hhmm(st.stop)})まで待機`;
       preOkIdx=targetIndex;   // 始発地でも定刻案内の対象に
     } else { // approaching
-      // ⑥ 200m手前で定刻より30秒以上早い→注意アナウンス+画面フラッシュ(停ごと1回)
-      if(st.d!=null && isFinite(st.d) && st.d<=200 && st.remainingSec>=30 && preEarlyWarnedIdx!==targetIndex){
+      // ① 100m手前で定刻より30秒以上早い→注意アナウンス+画面フラッシュ(停ごと1回)
+      // ② 終着バス停は到着地でそこに停まるため早発注意は出さない
+      if(targetIndex < stops.length-1 &&
+         st.d!=null && isFinite(st.d) && st.d<=100 && st.remainingSec>=30 && preEarlyWarnedIdx!==targetIndex){
         preEarlyWarnedIdx=targetIndex; speak('早発に注意してください'); flashOnce();
       }
       if(st.remainingSec<0){
@@ -974,15 +976,29 @@
   $('cfCheck').addEventListener('change', ()=>{ $('cfOk').disabled = !$('cfCheck').checked; });   // ① チェックで開始可
   $('cfCancel').addEventListener('click', ()=>{ $('confirmOverlay').classList.remove('show'); show('scList'); });   // ① コース選択へ戻る
   $('cfOk').addEventListener('click', ()=>{ if(!$('cfCheck').checked) return; $('confirmOverlay').classList.remove('show'); primeAudio(); beginRun(); });
+  // 未保存の補正をDBへ送る。成功しても corrections は消さず saved を立てるだけにして、
+  // 補正済みの印(🔴)と「もう一度押して取消」を運行終了後も使えるようにする。
   async function flushCorrections(){
-    const ids=Object.keys(corrections); if(!ids.length) return;
+    const ids=Object.keys(corrections).filter(id=>!corrections[id].saved);
+    if(!ids.length) return true;
     const fixes=ids.map(id=>({busstop_id:+id, lat:corrections[id].lat, lng:corrections[id].lng}));
     try{
       const r=await fetch(`${API_BASE}update_busstops.php`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({secret:CORRECT_SECRET, fixes})});
       const j=await r.json().catch(()=>({}));
-      if(r.ok && j.updated!=null){ toast(`座標を ${j.updated} 件 更新しました`); corrections={}; updateRail(); }
-      else { toast('座標更新に失敗: '+((j&&j.error)||('HTTP '+r.status))); }
-    }catch(e){ toast('座標更新の通信に失敗しました'); }
+      if(r.ok && j.updated!=null){ ids.forEach(id=> corrections[id].saved=true); toast(`座標を ${j.updated} 件 保存しました`); updateRail(); return true; }
+      toast('座標保存に失敗: '+((j&&j.error)||('HTTP '+r.status)));
+    }catch(e){ toast('座標保存の通信に失敗しました'); }
+    return false;
+  }
+  // 保存済みの補正を元の座標に戻す(取消)
+  async function revertCorrection(id, origLat, origLng){
+    try{
+      const r=await fetch(`${API_BASE}update_busstops.php`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({secret:CORRECT_SECRET, fixes:[{busstop_id:+id, lat:origLat, lng:origLng}]})});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok && j.updated!=null) return true;
+      toast('取消の保存に失敗: '+((j&&j.error)||('HTTP '+r.status)));
+    }catch(e){ toast('取消の通信に失敗しました'); }
+    return false;
   }
   function stopRun(){ flushCorrections(); stopGps(); }
   $('startBtn').addEventListener('click', ()=>{
@@ -997,10 +1013,15 @@
   $('correctBtn').addEventListener('click', ()=>{
     const stop=stops[targetIndex]; if(!stop){ toast('対象バス停がありません'); return; }
     const cur=corrections[stop.busstop_id];
-    if(cur){   // 補正済み → 取消(元の座標に戻す)
+    if(cur){   // 補正済み → 取消(元の座標に戻す。保存済みならDBも元に戻す)
       if(confirm(`「${stop.name}」の補正を取り消しますか？`)){
+        const wasSaved=!!cur.saved;
         stop.lat=cur.origLat; stop.lng=cur.origLng; delete corrections[stop.busstop_id];
-        toast(`「${stop.name}」の補正を取り消しました`); refreshDisp(stop);
+        if(wasSaved){
+          revertCorrection(stop.busstop_id, cur.origLat, cur.origLng)
+            .then(ok=> toast(ok?`「${stop.name}」の補正を取り消しました`:`取消をDBに反映できませんでした`));
+        } else { toast(`「${stop.name}」の補正を取り消しました`); }
+        refreshDisp(stop);
       }
       return;
     }
@@ -1009,10 +1030,12 @@
     navigator.geolocation.getCurrentPosition(p=>{
       const lat=p.coords.latitude, lng=p.coords.longitude, acc=p.coords.accuracy;
       if(acc>CORRECT_MAX_ACC){ toast(`GPS精度が低いため補正できません（±${Math.round(acc)}m・${CORRECT_MAX_ACC}m以内で実施）`); return; }   // 精度ガード
-      corrections[stop.busstop_id]={lat,lng, origLat:stop.lat, origLng:stop.lng};   // 元座標も保持
+      corrections[stop.busstop_id]={lat,lng, origLat:stop.lat, origLng:stop.lng, saved:false};   // 元座標も保持
       stop.lat=lat; stop.lng=lng;
-      toast(`「${stop.name}」を補正(±${Math.round(p.coords.accuracy)}m)・停止時に保存(もう一度押すと取消)`);
       refreshDisp(stop);
+      // ③ 終点到着後は運行が終了していて保存の機会が無いため、その場でDBへ保存する
+      if(watchId===null){ flushCorrections(); }
+      else { toast(`「${stop.name}」を補正しました・停止時に保存(もう一度押すと取消)`); }
     }, e=> toast('現在地取得に失敗: '+e.message), {enableHighAccuracy:true, timeout:15000, maximumAge:0});
   });
 
