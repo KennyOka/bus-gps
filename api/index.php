@@ -36,6 +36,8 @@ try {
         case 'employee.save':    handle_employee_save();    break;
         case 'employee.resetPassword': handle_employee_reset_password(); break; // 管理者がパスワード再設定
         case 'employee.create':  handle_employee_create();  break; // 管理者が新規社員登録
+        case 'employee.list':    handle_employee_list();    break; // 管理者が社員一覧
+        case 'employee.update':  handle_employee_update();  break; // 管理者が権限/有効を変更
 
         // ---- ダイヤ / マスタ ----
         case 'dia.courses':      handle_dia_courses();      break; // ダイヤマスタからコース雛形
@@ -1029,4 +1031,76 @@ function record_writable_fields(): array
         'dest', 'memo',            // 方面 / メモ（旧しまバス乗務履歴管理からの移行項目）
         'work_type',               // 運行種別: 路線/貸切/研修/出張/その他
     ];
+}
+
+/* ------------------------------------------------------------------ */
+/*  社員一覧・権限変更（管理者=role9 専用）                             */
+/* ------------------------------------------------------------------ */
+
+/** 社員の一覧。パスワードは返さない。 */
+function handle_employee_list(): void
+{
+    require_admin();
+    $st = pdo()->query(
+        'SELECT employee_no, name, role, is_active FROM m_employee ORDER BY employee_no'
+    );
+    $rows = [];
+    foreach ($st->fetchAll() as $r) {
+        $rows[] = [
+            'employee_no' => $r['employee_no'],
+            'name'        => $r['name'],
+            'role'        => (int) $r['role'],
+            'is_active'   => (int) $r['is_active'],
+        ];
+    }
+    json_ok(['employees' => $rows, 'count' => count($rows)]);
+}
+
+/** 権限(role)と有効/無効(is_active)の変更。自分自身の管理者権限は外せない。 */
+function handle_employee_update(): void
+{
+    $me = require_admin();
+    $no = (string) require_param('employee_no');
+
+    $st = pdo()->prepare('SELECT employee_no, name, role, is_active FROM m_employee WHERE employee_no = ?');
+    $st->execute([$no]);
+    $emp = $st->fetch();
+    if (!$emp) json_err('not_found', '該当の社員番号が見つかりません。', 404);
+
+    $role   = param('role', null);
+    $active = param('is_active', null);
+    $sets = []; $args = [];
+
+    if ($role !== null) {
+        $role = (int) $role;
+        if (!in_array($role, [1, 9], true)) json_err('bad_role', 'role は 1(運転者) か 9(管理者) を指定してください。', 422);
+        // 自分の管理者権限を外すと誰も管理できなくなる恐れがあるため禁止
+        if ($no === $me['employee_no'] && $role !== 9) {
+            json_err('self_demote', '自分自身の管理者権限は外せません。他の管理者から変更してください。', 422);
+        }
+        $sets[] = 'role = ?'; $args[] = $role;
+    }
+    if ($active !== null) {
+        $active = ((int) $active === 1) ? 1 : 0;
+        if ($no === $me['employee_no'] && $active === 0) {
+            json_err('self_disable', '自分自身は無効にできません。', 422);
+        }
+        $sets[] = 'is_active = ?'; $args[] = $active;
+    }
+    if (!$sets) json_err('no_change', '変更する項目がありません。', 422);
+
+    $args[] = $no;
+    pdo()->prepare('UPDATE m_employee SET ' . implode(', ', $sets) . ' WHERE employee_no = ?')->execute($args);
+
+    // 無効化・権限降格したときは、その人の既存ログインを切る
+    if (($active !== null && $active === 0) || ($role !== null && $role !== (int) $emp['role'])) {
+        pdo()->prepare('DELETE FROM t_auth_token WHERE employee_no = ?')->execute([$no]);
+    }
+
+    $st->execute([$no]);
+    $after = $st->fetch();
+    json_ok(['employee' => [
+        'employee_no' => $after['employee_no'], 'name' => $after['name'],
+        'role' => (int) $after['role'], 'is_active' => (int) $after['is_active'],
+    ]]);
 }

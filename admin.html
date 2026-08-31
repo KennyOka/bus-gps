@@ -1,0 +1,360 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>しまバス 管理コンソール</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#181d24; --panel2:#12171d; --line:#2a323c;
+    --ink:#eef2f6; --dim:#93a0ae; --faint:#5f6b78;
+    --ok:#35d68a; --warn:#f0b93d; --err:#ef5350; --accent:#4da3ff;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.7}
+  .wrap{max-width:900px;margin:0 auto;padding:18px 16px 70px}
+  header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:6px}
+  h1{font-size:21px;margin:0}
+  .who{font-size:13px;color:var(--dim)}
+  .tabs{display:flex;gap:8px;margin:16px 0 14px;flex-wrap:wrap}
+  .tabs button{background:#232b35;color:var(--ink);border:1px solid var(--line);border-radius:9px;
+    padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer}
+  .tabs button.on{background:var(--accent);color:#04121f;border-color:var(--accent)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+  .card h2{font-size:16px;margin:0 0 10px}
+  label{display:block;font-size:12px;color:var(--dim);margin-bottom:4px}
+  input,select{background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;
+    padding:10px;font-size:15px;font-family:var(--sans);width:100%}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .row>div{flex:1;min-width:140px}
+  button.pri{background:var(--accent);color:#04121f;border:none;border-radius:9px;padding:11px 18px;
+    font-size:15px;font-weight:700;cursor:pointer;width:auto}
+  button.sec{background:#232b35;color:var(--ink);border:1px solid var(--line);border-radius:9px;
+    padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer;width:auto}
+  button:disabled{opacity:.45;cursor:default}
+  .msg{font-size:14px;margin-top:10px;min-height:1.2em}
+  .msg.ok{color:var(--ok)} .msg.err{color:var(--err)}
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+  th,td{border-bottom:1px solid var(--line);padding:8px 6px;text-align:left;vertical-align:middle}
+  th{color:var(--dim);font-size:12px;font-weight:600}
+  td.num{font-family:var(--mono);text-align:right}
+  .tag{display:inline-block;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:700}
+  .tag.admin{background:rgba(77,163,255,.18);color:var(--accent)}
+  .tag.drv{background:#232b35;color:var(--dim)}
+  .tag.off{background:rgba(239,83,80,.16);color:var(--err)}
+  .log{background:#0b0f14;border:1px solid var(--line);border-radius:10px;padding:12px;height:300px;overflow:auto;
+       font-family:var(--mono);font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+  .log .ok{color:var(--ok)} .log .warn{color:var(--warn)} .log .err{color:var(--err)} .log .dim{color:var(--faint)}
+  .bar{height:8px;background:#0b0f14;border-radius:6px;overflow:hidden;margin:10px 0 4px;border:1px solid var(--line)}
+  .bar>i{display:block;height:100%;background:var(--accent);width:0;transition:width .3s}
+  .note{font-size:12.5px;color:var(--faint);margin-top:10px}
+  .hide{display:none}
+  .login{max-width:360px;margin:60px auto}
+</style>
+
+<div class="wrap">
+
+  <!-- ログイン -->
+  <div id="loginView" class="login hide">
+    <div class="card">
+      <h2>管理コンソール</h2>
+      <div style="margin-bottom:10px"><label>社員番号</label><input id="liNo" inputmode="numeric" autocomplete="username"></div>
+      <div style="margin-bottom:14px"><label>パスワード</label><input id="liPw" type="password" autocomplete="current-password"></div>
+      <button class="pri" id="btnLogin" style="width:100%">ログイン</button>
+      <div class="msg" id="liMsg"></div>
+      <div class="note">管理者（role=9）のアカウントでログインしてください。</div>
+    </div>
+  </div>
+
+  <!-- 本体 -->
+  <div id="mainView" class="hide">
+    <header>
+      <h1>しまバス 管理コンソール</h1>
+      <div class="who"><span id="whoName"></span> <button class="sec" id="btnLogout" style="margin-left:8px">ログアウト</button></div>
+    </header>
+
+    <div class="tabs">
+      <button data-tab="staff" class="on">運転者・権限</button>
+      <button data-tab="import">ダイヤ取込</button>
+    </div>
+
+    <!-- 運転者・権限 -->
+    <section id="tab-staff">
+      <div class="card">
+        <h2>運転者を追加</h2>
+        <div class="row">
+          <div><label>社員番号（数字1〜4桁）</label><input id="adNo" inputmode="numeric" placeholder="例: 123"></div>
+          <div><label>氏名</label><input id="adName" placeholder="例: 島袋 太郎"></div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <div><label>仮パスワード（6文字以上）</label><input id="adPw" placeholder="本人が後で変更します"></div>
+          <div style="max-width:150px"><label>権限</label>
+            <select id="adRole"><option value="1">運転者</option><option value="9">管理者</option></select>
+          </div>
+          <button class="pri" id="btnAdd">追加する</button>
+        </div>
+        <div class="msg" id="adMsg"></div>
+      </div>
+
+      <div class="card">
+        <h2>社員一覧 <button class="sec" id="btnReload" style="margin-left:8px">再読込</button></h2>
+        <div id="staffTable"></div>
+        <div class="note">権限や有効/無効を変えると、その人のログインは切れます（次回ログインから反映）。自分自身の管理者権限は外せません。</div>
+      </div>
+
+      <div class="card">
+        <h2>パスワードの再設定</h2>
+        <div class="row">
+          <div><label>社員番号</label><input id="rpNo" inputmode="numeric"></div>
+          <div><label>新しいパスワード（6文字以上）</label><input id="rpPw"></div>
+          <button class="pri" id="btnReset">再設定する</button>
+        </div>
+        <div class="msg" id="rpMsg"></div>
+        <div class="note">再設定するとその人の既存ログインは切れます。新しいパスワードを本人にお伝えください。</div>
+      </div>
+    </section>
+
+    <!-- ダイヤ取込 -->
+    <section id="tab-import" class="hide">
+      <div class="card">
+        <h2>1. いまの状況を調べる</h2>
+        <div class="row">
+          <div style="max-width:160px"><label>ダイヤ種別</label>
+            <select id="dayType"><option value="1">平日</option><option value="2">土日祝</option></select>
+          </div>
+          <button class="sec" id="btnCheck">カバー状況を調べる</button>
+        </div>
+        <div id="coverage"></div>
+        <div class="note">「便が無い」「運賃が無い」コースがある場合、下の表の起点で取り込むと解消します。</div>
+      </div>
+
+      <div class="card">
+        <h2>2. 取り込む</h2>
+        <div class="row">
+          <div style="flex:2"><label>起点（しまバス側のID。カンマ区切り。空欄なら調査結果を使用）</label>
+            <input id="origins" placeholder="例: 42,66"></div>
+          <div style="max-width:150px"><label>対象日</label><input id="date" placeholder="YYYYMMDD"></div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <button class="pri" id="btnRun">自動で取り込む</button>
+          <button class="sec" id="btnStop" disabled>中止</button>
+        </div>
+        <div class="bar"><i id="bar"></i></div>
+        <div class="note" id="phase">待機中</div>
+        <div class="note">便は20本ずつ、運賃はパターン4つずつ自動で繰り返します。混雑エラーは待って自動再試行します。<b>ページを閉じると止まります。</b></div>
+      </div>
+
+      <div class="card">
+        <h2>ログ</h2>
+        <div class="log" id="log"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const API='./api/';
+  let me=null, stopFlag=false, lastSuggest=[];
+
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  function ts(){ return new Date().toTimeString().slice(0,8); }
+  function log(m,cls){ const el=$('log'); if(!el) return; const d=document.createElement('div');
+    if(cls) d.className=cls; d.textContent=`[${ts()}] ${m}`; el.appendChild(d); el.scrollTop=el.scrollHeight; }
+  function msg(id,text,ok){ const el=$(id); el.textContent=text; el.className='msg'+(text?(ok?' ok':' err'):''); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  // API呼び出し。権限・入力エラーは再試行しない。混雑/タイムアウトのみ待って再試行。
+  async function call(body, tries=1){
+    for(let i=0;i<tries;i++){
+      if(stopFlag) throw new Error('中止しました');
+      let r, txt, j=null;
+      try{
+        r=await fetch(API,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        txt=await r.text(); try{ j=JSON.parse(txt); }catch(e){}
+      }catch(e){
+        if(i===tries-1) throw new Error('通信できません（電波・接続をご確認ください）');
+        log(`通信に失敗。20秒後に再試行します`,'warn'); await sleep(20000); continue;
+      }
+      if(r.ok && j && j.ok) return j.data;
+      const em=(j&&j.error&&j.error.message)||`HTTP ${r.status}`;
+      const code=(j&&j.error&&j.error.code)||'';
+      if(code==='unauthorized'){ showLogin('ログインの有効期限が切れました。もう一度ログインしてください。'); throw new Error('ログインが必要です'); }
+      if(code==='forbidden'){ throw new Error('管理者権限が必要です'); }
+      const retryable = /Too many connections/i.test(em) || r.status===502 || r.status===504;
+      if(!retryable || i===tries-1) throw new Error(em);
+      const wait=(i+1)*20; log(`混雑のため ${wait} 秒待って再試行します（${em}）`,'warn'); await sleep(wait*1000);
+    }
+  }
+
+  /* ---------- ログイン ---------- */
+  function showLogin(text){ $('loginView').classList.remove('hide'); $('mainView').classList.add('hide');
+    if(text) msg('liMsg',text,false); }
+  function showMain(){ $('loginView').classList.add('hide'); $('mainView').classList.remove('hide');
+    $('whoName').textContent=`${me.name}（${me.employee_no}）`; }
+
+  $('btnLogin').addEventListener('click', async ()=>{
+    msg('liMsg','',true); $('btnLogin').disabled=true;
+    try{
+      const d=await call({action:'auth.login', employee_no:$('liNo').value.trim(), password:$('liPw').value});
+      me=d.employee;
+      if(+me.role!==9){ me=null; msg('liMsg','このアカウントは管理者ではありません（管理者=role 9）。',false); }
+      else { $('liPw').value=''; showMain(); loadStaff(); }
+    }catch(e){ msg('liMsg',e.message,false); }
+    $('btnLogin').disabled=false;
+  });
+  $('liPw').addEventListener('keydown', e=>{ if(e.key==='Enter') $('btnLogin').click(); });
+
+  $('btnLogout').addEventListener('click', async ()=>{
+    try{ await call({action:'auth.logout'}); }catch(e){}
+    me=null; showLogin('ログアウトしました。');
+  });
+
+  /* ---------- タブ ---------- */
+  document.querySelectorAll('.tabs button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on', x===b));
+      $('tab-staff').classList.toggle('hide', b.dataset.tab!=='staff');
+      $('tab-import').classList.toggle('hide', b.dataset.tab!=='import');
+    });
+  });
+
+  /* ---------- 社員 ---------- */
+  async function loadStaff(){
+    $('staffTable').innerHTML='<div class="note">読み込み中…</div>';
+    try{
+      const d=await call({action:'employee.list'});
+      const rows=(d.employees||[]).map(e=>{
+        const self = me && e.employee_no===me.employee_no;
+        const roleTag = e.role===9 ? '<span class="tag admin">管理者</span>' : '<span class="tag drv">運転者</span>';
+        const state = e.is_active ? '' : ' <span class="tag off">無効</span>';
+        return `<tr>
+          <td class="num">${esc(e.employee_no)}</td>
+          <td>${esc(e.name)}${self?' <span class="note">(自分)</span>':''}</td>
+          <td>${roleTag}${state}</td>
+          <td style="text-align:right">
+            <button class="sec" data-act="role" data-no="${esc(e.employee_no)}" data-role="${e.role===9?1:9}" ${self?'disabled':''}>
+              ${e.role===9?'運転者にする':'管理者にする'}</button>
+            <button class="sec" data-act="active" data-no="${esc(e.employee_no)}" data-active="${e.is_active?0:1}" ${self?'disabled':''}>
+              ${e.is_active?'無効にする':'有効にする'}</button>
+          </td></tr>`;
+      }).join('');
+      $('staffTable').innerHTML=`<table><tr><th>社員番号</th><th>氏名</th><th>権限</th><th></th></tr>${rows}</table>`;
+      $('staffTable').querySelectorAll('button[data-act]').forEach(b=>{
+        b.addEventListener('click', async ()=>{
+          const body={action:'employee.update', employee_no:b.dataset.no};
+          if(b.dataset.act==='role')   body.role=+b.dataset.role;
+          if(b.dataset.act==='active') body.is_active=+b.dataset.active;
+          const what=b.textContent.trim();
+          if(!confirm(`社員番号 ${b.dataset.no} を「${what}」でよろしいですか？`)) return;
+          b.disabled=true;
+          try{ await call(body); loadStaff(); }
+          catch(e){ alert('変更できませんでした: '+e.message); b.disabled=false; }
+        });
+      });
+    }catch(e){ $('staffTable').innerHTML=`<div class="msg err">${esc(e.message)}</div>`; }
+  }
+  $('btnReload').addEventListener('click', loadStaff);
+
+  $('btnAdd').addEventListener('click', async ()=>{
+    msg('adMsg','',true); $('btnAdd').disabled=true;
+    try{
+      const d=await call({action:'employee.create', employee_no:$('adNo').value.trim(),
+        name:$('adName').value.trim(), password:$('adPw').value, role:+$('adRole').value});
+      msg('adMsg',`追加しました（社員番号 ${d.employee_no}）。仮パスワードを本人にお伝えください。`,true);
+      $('adNo').value=$('adName').value=$('adPw').value='';
+      loadStaff();
+    }catch(e){ msg('adMsg',e.message,false); }
+    $('btnAdd').disabled=false;
+  });
+
+  $('btnReset').addEventListener('click', async ()=>{
+    msg('rpMsg','',true);
+    if(!confirm(`社員番号 ${$('rpNo').value.trim()} のパスワードを再設定します。よろしいですか？`)) return;
+    $('btnReset').disabled=true;
+    try{
+      await call({action:'employee.resetPassword', employee_no:$('rpNo').value.trim(), new_password:$('rpPw').value});
+      msg('rpMsg','再設定しました。新しいパスワードを本人にお伝えください。',true);
+      $('rpNo').value=$('rpPw').value='';
+    }catch(e){ msg('rpMsg',e.message,false); }
+    $('btnReset').disabled=false;
+  });
+
+  /* ---------- ダイヤ取込 ---------- */
+  function today(){ const d=new Date(); return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0'); }
+  $('date').value=today();
+
+  $('btnCheck').addEventListener('click', async ()=>{
+    $('btnCheck').disabled=true; $('coverage').innerHTML='';
+    try{
+      log('カバー状況を調べています…');
+      const d=await call({action:'shimabus.coverage', day_type:+$('dayType').value});
+      lastSuggest=(d.suggest_origins||[]).filter(x=>x.origin);
+      const rows=lastSuggest.map(s=>`<tr><td>${esc(s.name)}</td><td class="num">${esc(s.origin)}</td><td class="num">${s.courses}</td><td>${esc((s.sample||[]).join(', '))}</td></tr>`).join('');
+      $('coverage').innerHTML=
+        `<table><tr><th>コース総数</th><th>揃っている</th><th>便が無い</th><th>運賃が無い</th></tr>`+
+        `<tr><td class="num">${d.courses_total}</td><td class="num">${d.ok}</td><td class="num">${d.no_trip}</td><td class="num">${d.no_fare}</td></tr></table>`+
+        (rows?`<table style="margin-top:14px"><tr><th>取り込むべき起点</th><th>起点ID</th><th>不足コース</th><th>例</th></tr>${rows}</table>`
+             :'<div class="msg ok">不足はありません。</div>');
+      log(`コース ${d.courses_total} 件中 ${d.ok} 件が揃っています（便なし ${d.no_trip} / 運賃なし ${d.no_fare}）`, d.ok===d.courses_total?'ok':'warn');
+      if(lastSuggest.length) log(`必要な起点: ${lastSuggest.map(s=>s.origin+'('+s.name+')').join(', ')}`);
+    }catch(e){ log('調査に失敗: '+e.message,'err'); }
+    $('btnCheck').disabled=false;
+  });
+
+  $('btnStop').addEventListener('click', ()=>{ stopFlag=true; log('中止を要求しました…','warn'); });
+
+  $('btnRun').addEventListener('click', async ()=>{
+    stopFlag=false; $('btnRun').disabled=true; $('btnStop').disabled=false; $('bar').style.width='0';
+    const date=$('date').value.replace(/[^0-9]/g,'');
+    let origins=$('origins').value.split(',').map(s=>s.trim()).filter(Boolean);
+    const prog=p=>{ $('bar').style.width=Math.max(0,Math.min(100,p))+'%'; };
+    try{
+      if(!/^\d{8}$/.test(date)) throw new Error('対象日は YYYYMMDD で入力してください');
+      if(!origins.length){
+        if(!lastSuggest.length) throw new Error('先に「カバー状況を調べる」を押すか、起点を入力してください');
+        origins=lastSuggest.map(s=>s.origin);
+        log(`調査結果の起点を使います: ${origins.join(', ')}`);
+      }
+      for(let oi=0; oi<origins.length; oi++){
+        const origin=origins[oi];
+        $('phase').textContent=`便データ ${oi+1}/${origins.length}（起点 ${origin}）`;
+        const pre=await call({action:'shimabus.importRoute', origin, target_date:date, trip_offset:0, trip_limit:20, mode:'preview'}, 4);
+        const total=pre.summary.trips_total||0;
+        log(`起点 ${origin}（${pre.summary.origin_name}）: ${pre.summary.service} / 全 ${total} 便`);
+        for(let off=0; off<total; off+=20){
+          if(stopFlag) throw new Error('中止しました');
+          const r=await call({action:'shimabus.importRoute', origin, target_date:date, trip_offset:off, trip_limit:20, mode:'commit'}, 4);
+          log(`  便 ${off+1}〜${Math.min(off+20,total)} を取込（${r.summary.trips}便）`,'ok');
+          prog(((oi+Math.min(1,(off+20)/Math.max(1,total)))/origins.length)*50);
+          await sleep(1500);
+        }
+      }
+      $('phase').textContent='区間運賃';
+      let off=0, guard=0;
+      while(guard++<300){
+        if(stopFlag) throw new Error('中止しました');
+        const r=await call({action:'shimabus.importFares', target_date:date, pattern_limit:4, pattern_offset:off, mode:'commit'}, 4);
+        const s=r.summary;
+        log(`  運賃 パターン ${off+1}〜${s.next_offset} / ${s.patterns_total}（${s.rows_written} 行）`,'ok');
+        prog(50+(s.next_offset/Math.max(1,s.patterns_total))*50);
+        if(s.finished) break;
+        off=s.next_offset; await sleep(1500);
+      }
+      prog(100); $('phase').textContent='完了';
+      log('取込が完了しました。ドラサポで料金一覧をご確認ください。','ok');
+    }catch(e){ $('phase').textContent='中断'; log('中断: '+e.message,'err'); }
+    $('btnRun').disabled=false; $('btnStop').disabled=true;
+  });
+
+  /* ---------- 起動時 ---------- */
+  (async()=>{
+    try{
+      const d=await call({action:'auth.me'});
+      me=d.employee;
+      if(+me.role===9){ showMain(); loadStaff(); }
+      else showLogin('管理者（role=9）のアカウントでログインしてください。');
+    }catch(e){ showLogin(); }
+  })();
+})();
+</script>
