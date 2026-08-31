@@ -70,6 +70,7 @@ try {
         case 'shimabus.importRoute': handle_shimabus_import_route(); break;
         case 'shimabus.importFares': handle_shimabus_import_fares(); break;   // 区間運賃(三角表)を分割取込
         case 'shimabus.cleanupEmptyTrips': handle_shimabus_cleanup_empty_trips(); break; // 空の便を削除
+        case 'shimabus.coverage': handle_shimabus_coverage(); break;   // 取込のカバー状況と必要な起点
 
         default:
             json_err('unknown_action', "未定義のaction: {$action}", 404);

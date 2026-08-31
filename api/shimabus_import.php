@@ -650,3 +650,81 @@ function handle_shimabus_cleanup_empty_trips(): void
     }
     json_ok(['mode' => 'commit', 'summary' => $summary, 'deleted' => $deleted]);
 }
+
+/* ================================================================== */
+/*  取込のカバー状況を調べ、追加で必要な起点を提案する                  */
+/*  action=shimabus.coverage                                           */
+/*                                                                     */
+/*  ドラサポのコース(m_dia_course, 実車)が、取込済みの便(src_trip)と    */
+/*  突合できるか・運賃(src_fare)を持つかを数え、足りない分の「起点」を  */
+/*  多い順に返す。importRoute の origin にはここで返す src_busstop_id を*/
+/*  指定する(しまバス側のID。ドラサポのbusstop_idとは別体系)。          */
+/*                                                                     */
+/*  params: day_type(1=平日/2=土日祝, 既定1)                            */
+/*          target_date(YYYYMMDD 任意。指定時はその日の取込のみ対象)    */
+/* ================================================================== */
+function handle_shimabus_coverage(): void
+{
+    require_admin();
+    $dayType = (int) param('day_type', 1);
+    if ($dayType !== 1 && $dayType !== 2) json_err('bad_day_type', 'day_type は 1(平日) か 2(土日祝) を指定してください。', 422);
+    $date = (string) param('target_date', '');
+    $tgt  = ($date !== '' && preg_match('/^\d{8}$/', $date)) ? (new DateTime($date))->format('Y-m-d') : null;
+
+    $db = pdo();
+
+    // 対象コース(実車)と始発停・発時刻
+    $sql = "SELECT c.dia_course_id, d.dia_no, c.seq, c.start_busstop_id,
+                   TIME_FORMAT(c.departure_time,'%H:%i:%s') AS dep,
+                   COALESCE(c.start_name, s.name) AS start_name,
+                   b.src_busstop_id
+              FROM m_dia d
+              JOIN m_dia_course c ON c.dia_id = d.dia_id AND c.category = 3
+              LEFT JOIN m_busstop s ON s.busstop_id = c.start_busstop_id
+              LEFT JOIN m_busstop b ON b.busstop_id = c.start_busstop_id
+             WHERE d.day_type = ? AND d.is_active = 1
+             ORDER BY d.dia_no, c.seq";
+    $st = $db->prepare($sql); $st->execute([$dayType]);
+    $courses = $st->fetchAll();
+
+    // 突合: 始発停+発時刻 → src_trip(あれば運賃の有無も見る)
+    $q = $tgt
+        ? $db->prepare("SELECT t.src_trip_id, EXISTS(SELECT 1 FROM src_fare f WHERE f.src_trip_id=t.src_trip_id) AS has_fare
+                          FROM src_trip t WHERE t.origin_busstop_id=? AND t.first_departure=? AND t.target_date=? ORDER BY t.target_date DESC LIMIT 1")
+        : $db->prepare("SELECT t.src_trip_id, EXISTS(SELECT 1 FROM src_fare f WHERE f.src_trip_id=t.src_trip_id) AS has_fare
+                          FROM src_trip t WHERE t.origin_busstop_id=? AND t.first_departure=? ORDER BY t.target_date DESC LIMIT 1");
+
+    $total=0; $noTrip=0; $noFare=0; $ok=0;
+    $need=[];   // src_busstop_id => ['name','busstop_id','courses'=>n]
+    foreach ($courses as $c) {
+        $total++;
+        $args = [ (int)$c['start_busstop_id'], $c['dep'] ];
+        if ($tgt) $args[] = $tgt;
+        $q->execute($args);
+        $row = $q->fetch();
+        $lack = false;
+        if (!$row)                    { $noTrip++;  $lack = true; }
+        elseif (!(int)$row['has_fare']) { $noFare++; $lack = true; }
+        else                          { $ok++; }
+        if ($lack) {
+            $src = (string)($c['src_busstop_id'] ?? '');
+            $key = $src !== '' ? $src : ('?' . $c['start_busstop_id']);
+            if (!isset($need[$key])) $need[$key] = ['origin'=>$src, 'name'=>$c['start_name'],
+                                                    'busstop_id'=>(int)$c['start_busstop_id'], 'courses'=>0, 'sample'=>[]];
+            $need[$key]['courses']++;
+            if (count($need[$key]['sample']) < 3) $need[$key]['sample'][] = 'ダイヤ'.ltrim($c['dia_no'],'0').'-'.$c['seq'];
+        }
+    }
+    // 不足の多い順(=1回の取込で効果が大きい順)
+    usort($need, static fn($a,$b) => $b['courses'] <=> $a['courses']);
+
+    json_ok([
+        'day_type'      => $dayType,
+        'target_date'   => $tgt ?: 'すべて',
+        'courses_total' => $total,
+        'ok'            => $ok,       // 便も運賃も揃っている
+        'no_trip'       => $noTrip,   // 便そのものが未取込
+        'no_fare'       => $noFare,   // 便はあるが運賃が無い
+        'suggest_origins' => array_values($need),   // origin= に指定する値(しまバス側ID)
+    ]);
+}

@@ -1,0 +1,196 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ダイヤ取込コンソール</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#181d24; --line:#2a323c; --ink:#eef2f6; --dim:#93a0ae;
+    --ok:#35d68a; --warn:#f0b93d; --err:#ef5350; --accent:#4da3ff;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.7}
+  .wrap{max-width:820px;margin:0 auto;padding:20px 16px 60px}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--dim);font-size:13px;margin-bottom:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+  .card h2{font-size:16px;margin:0 0 10px}
+  label{display:block;font-size:12px;color:var(--dim);margin-bottom:4px}
+  input,select{background:#12171d;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:9px 10px;font-size:15px;font-family:var(--sans)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  button{background:var(--accent);color:#04121f;border:none;border-radius:9px;padding:11px 18px;font-size:15px;font-weight:700;cursor:pointer}
+  button.sec{background:#232b35;color:var(--ink);border:1px solid var(--line)}
+  button:disabled{opacity:.45;cursor:default}
+  .log{background:#0b0f14;border:1px solid var(--line);border-radius:10px;padding:12px;height:340px;overflow:auto;
+       font-family:var(--mono);font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+  .log .ok{color:var(--ok)} .log .warn{color:var(--warn)} .log .err{color:var(--err)} .log .dim{color:var(--dim)}
+  .bar{height:8px;background:#0b0f14;border-radius:6px;overflow:hidden;margin:10px 0 4px;border:1px solid var(--line)}
+  .bar>i{display:block;height:100%;background:var(--accent);width:0;transition:width .3s}
+  .note{font-size:12.5px;color:var(--dim);margin-top:10px}
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-top:8px}
+  th,td{border-bottom:1px solid var(--line);padding:7px 6px;text-align:left}
+  th{color:var(--dim);font-size:12px;font-weight:600}
+  td.num{font-family:var(--mono);text-align:right}
+</style>
+
+<div class="wrap">
+  <h1>ダイヤ取込コンソール</h1>
+  <div class="sub">しまバスのダイヤ・区間運賃をドラサポのDBへ取り込みます。管理者(role=9)でログインした状態で使ってください。</div>
+
+  <div class="card">
+    <h2>1. いまの状況を調べる</h2>
+    <div class="row">
+      <div>
+        <label>ダイヤ種別</label>
+        <select id="dayType"><option value="1">平日</option><option value="2">土日祝</option></select>
+      </div>
+      <button id="btnCheck" class="sec">カバー状況を調べる</button>
+    </div>
+    <div id="coverage"></div>
+    <div class="note">「不足」は、コースに対応する便が未取込か、便はあるが運賃が入っていない状態です。下の起点で取り込むと解消します。</div>
+  </div>
+
+  <div class="card">
+    <h2>2. 取り込む</h2>
+    <div class="row">
+      <div style="flex:1;min-width:220px">
+        <label>起点（しまバス側のID。カンマ区切りで複数可。空欄なら上の調査結果を使用）</label>
+        <input id="origins" placeholder="例: 42,66" style="width:100%">
+      </div>
+      <div>
+        <label>対象日</label>
+        <input id="date" size="10" placeholder="YYYYMMDD">
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="btnRun">自動で取り込む</button>
+      <button id="btnStop" class="sec" disabled>中止</button>
+    </div>
+    <div class="bar"><i id="bar"></i></div>
+    <div id="phase" class="note">待機中</div>
+    <div class="note">便を20本ずつ、運賃をパターン4つずつに分けて自動で繰り返します。混雑エラーが出たら間隔を空けて自動で再試行します。<b>途中で閉じると止まります。</b></div>
+  </div>
+
+  <div class="card">
+    <h2>ログ</h2>
+    <div class="log" id="log"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const API='./api/';
+  let stopFlag=false;
+
+  function ts(){ const d=new Date(); return d.toTimeString().slice(0,8); }
+  function log(msg, cls){ const el=$('log'); const line=document.createElement('div');
+    if(cls) line.className=cls; line.textContent=`[${ts()}] ${msg}`; el.appendChild(line); el.scrollTop=el.scrollHeight; }
+  function phase(t){ $('phase').textContent=t; }
+  function prog(p){ $('bar').style.width=Math.max(0,Math.min(100,p))+'%'; }
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+  // APIを1回叩く。混雑・タイムアウトは待って自動再試行。
+  async function call(body, tries=4){
+    for(let i=0;i<tries;i++){
+      if(stopFlag) throw new Error('中止しました');
+      try{
+        const r=await fetch(API, {method:'POST', credentials:'include',
+          headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+        const txt=await r.text();
+        let j=null; try{ j=JSON.parse(txt); }catch(e){}
+        if(r.ok && j && j.ok) return j.data;
+        const msg=(j&&j.error&&j.error.message)||`HTTP ${r.status}`;
+        const retryable = /Too many connections|timeout|タイムアウト|HTTP 50\d/i.test(msg) || r.status===504 || r.status===502;
+        if(!retryable || i===tries-1) throw new Error(msg);
+        const wait=(i+1)*20;
+        log(`混雑のため ${wait} 秒待って再試行します（${msg}）`, 'warn');
+        await sleep(wait*1000);
+      }catch(e){
+        if(stopFlag) throw e;
+        if(i===tries-1) throw e;
+        log(`通信に失敗。20秒後に再試行します（${e.message}）`, 'warn');
+        await sleep(20000);
+      }
+    }
+  }
+
+  function today(){ const d=new Date(); return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0'); }
+  $('date').value=today();
+
+  // ---- カバー状況 ----
+  let lastSuggest=[];
+  $('btnCheck').addEventListener('click', async ()=>{
+    $('btnCheck').disabled=true; $('coverage').innerHTML='';
+    try{
+      log('カバー状況を調べています…');
+      const d=await call({action:'shimabus.coverage', day_type:+$('dayType').value});
+      lastSuggest=(d.suggest_origins||[]).filter(x=>x.origin);
+      const rows=lastSuggest.map(s=>`<tr><td>${s.name||'—'}</td><td class="num">${s.origin}</td><td class="num">${s.courses}</td><td>${(s.sample||[]).join(', ')}</td></tr>`).join('');
+      $('coverage').innerHTML=
+        `<table><tr><th>コース総数</th><th>揃っている</th><th>便が無い</th><th>運賃が無い</th></tr>`+
+        `<tr><td class="num">${d.courses_total}</td><td class="num">${d.ok}</td><td class="num">${d.no_trip}</td><td class="num">${d.no_fare}</td></tr></table>`+
+        (rows?`<table style="margin-top:14px"><tr><th>取り込むべき起点</th><th>起点ID</th><th>不足コース数</th><th>例</th></tr>${rows}</table>`:'<div class="note">不足はありません。</div>');
+      log(`コース ${d.courses_total} 件中 ${d.ok} 件が揃っています（便なし ${d.no_trip} / 運賃なし ${d.no_fare}）`, d.ok===d.courses_total?'ok':'warn');
+      if(lastSuggest.length) log(`必要な起点: ${lastSuggest.map(s=>s.origin+'('+s.name+')').join(', ')}`);
+    }catch(e){ log('調査に失敗: '+e.message,'err'); }
+    $('btnCheck').disabled=false;
+  });
+
+  // ---- 自動取込 ----
+  $('btnStop').addEventListener('click', ()=>{ stopFlag=true; log('中止を要求しました…','warn'); });
+
+  $('btnRun').addEventListener('click', async ()=>{
+    stopFlag=false; $('btnRun').disabled=true; $('btnStop').disabled=false; prog(0);
+    const date=$('date').value.replace(/[^0-9]/g,'');
+    let origins=$('origins').value.split(',').map(s=>s.trim()).filter(Boolean);
+    try{
+      if(!/^\d{8}$/.test(date)) throw new Error('対象日は YYYYMMDD で入力してください');
+      if(!origins.length){
+        if(!lastSuggest.length){ log('先に「カバー状況を調べる」を押してください','warn'); throw new Error('起点が未指定です'); }
+        origins=lastSuggest.map(s=>s.origin);
+        log(`調査結果の起点を使います: ${origins.join(', ')}`);
+      }
+
+      // 1) 便データ(起点ごとに20本ずつ)
+      for(let oi=0; oi<origins.length; oi++){
+        const origin=origins[oi];
+        phase(`便データ ${oi+1}/${origins.length}（起点 ${origin}）`);
+        const pre=await call({action:'shimabus.importRoute', origin, target_date:date, trip_offset:0, trip_limit:20, mode:'preview'});
+        const total=pre.summary.trips_total||0;
+        log(`起点 ${origin}（${pre.summary.origin_name}）: ${pre.summary.service} / 全 ${total} 便`);
+        for(let off=0; off<total; off+=20){
+          if(stopFlag) throw new Error('中止しました');
+          const r=await call({action:'shimabus.importRoute', origin, target_date:date, trip_offset:off, trip_limit:20, mode:'commit'});
+          log(`  便 ${off+1}〜${Math.min(off+20,total)} を取込（${r.summary.trips}便）`,'ok');
+          prog(((oi + Math.min(1,(off+20)/Math.max(1,total)))/origins.length)*50);
+          await sleep(1500);   // サーバーを休ませる
+        }
+      }
+
+      // 2) 運賃(パターン4つずつ)
+      phase('区間運賃');
+      let off=0, total=0, guard=0;
+      while(guard++<200){
+        if(stopFlag) throw new Error('中止しました');
+        const r=await call({action:'shimabus.importFares', target_date:date, pattern_limit:4, pattern_offset:off, mode:'commit'});
+        const s=r.summary; total=s.patterns_total;
+        log(`  運賃 パターン ${off+1}〜${s.next_offset} / ${total}（${s.rows_written} 行）`,'ok');
+        prog(50 + (s.next_offset/Math.max(1,total))*50);
+        if(s.finished) break;
+        off=s.next_offset;
+        await sleep(1500);
+      }
+
+      prog(100); phase('完了');
+      log('取込が完了しました。ドラサポで料金一覧をご確認ください。','ok');
+      log('念のため「カバー状況を調べる」で不足が無いか確認できます。','dim');
+    }catch(e){
+      phase('中断'); log('中断: '+e.message,'err');
+    }
+    $('btnRun').disabled=false; $('btnStop').disabled=true;
+  });
+
+  log('準備ができました。まず「カバー状況を調べる」を押してください。','dim');
+})();
+</script>
