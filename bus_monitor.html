@@ -238,6 +238,9 @@
   #nextCourseMsg.tap{ cursor:pointer; border-color:var(--neutral); background:rgba(77,163,255,.12); }
   #nextCourseMsg.tap:active{ opacity:.7; }
   #nextCourseMsg .nc-go{ margin-top:8px; font-size:13px; font-weight:700; color:var(--neutral); }
+  /* 休憩は見落とさないよう帯で強調 */
+  #nextCourseMsg .nc-rest{ background:var(--late-y); color:#241c00; font-size:22px; font-weight:900;
+    border-radius:9px; padding:9px 10px; margin:-4px -6px 10px; letter-spacing:.02em; }
   /* ⑨ 後続バス */
   .fn-row{ margin-top:12px; width:100%; max-width:460px; display:flex; gap:8px; }
   .nextbus-btn{ flex:1; padding:14px 6px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:14px; font-weight:700; white-space:nowrap; }   /* ③ コースボタンと同等の大きさ */
@@ -876,12 +879,12 @@
       const a=toMin(course && course.arrival_time), dp=toMin(nx.departure_time);
       const rest=(a!=null && dp!=null && dp-a>=30) ? (dp-a) : 0;
       el.className='show tap';
-      el.innerHTML=(rest?`<div class="nc-lbl">${rest}分 休憩が入ります</div>`:`<div class="nc-lbl">次のコース</div>`)+
+      el.innerHTML=(rest?`<div class="nc-rest">☕ ${rest}分 休憩が入ります</div>`:`<div class="nc-lbl">次のコース</div>`)+
         `<div class="nc-main">${nx.start_place||'—'} 始発　<span class="nc-time">${t||'--:--'}</span></div>`+
         `<div class="nc-go">押すと次のコースへ ▶</div>`;
       el.onclick=()=> selectCourse(nx);   // ① 押すと次のコースの確認画面へ
-      // 「◯分休憩」は「ぶん」と読まれるため、音声では「◯分の休憩」と言わせて「ふん/ぷん」で読ませる
-      speak((rest?`${rest}分の休憩が入ります。`:'')+`次のコースは、${nx.start_place||''}始発、${(t||'').replace(':','時')}分です`);
+      // 読みを固定するため、休憩の案内はかなで指定(「ぶん」「やすみいこい」等の誤読を防ぐ)
+      speak((rest?`${rest}ふん、きゅうけいがはいります。`:'')+`次のコースは、${nx.start_place||''}始発、${(t||'').replace(':','時')}分です`);
     } else {
       el.className='show end'; el.onclick=null;   // 本日終了時は押しても何もしない
       el.innerHTML=`<div class="nc-lbl">本日のダイヤ</div>`+
