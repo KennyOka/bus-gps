@@ -234,6 +234,10 @@
   #nextCourseMsg.end .nc-main{ color:var(--ok); font-size:18px; }
   /* 各行は途中で折り返さず1行に収める(端末幅が足りない時だけ自動で縮小) */
   #nextCourseMsg .nc-line{ display:block; white-space:nowrap; }
+  /* 押せる案内(次のコースへ進む) */
+  #nextCourseMsg.tap{ cursor:pointer; border-color:var(--neutral); background:rgba(77,163,255,.12); }
+  #nextCourseMsg.tap:active{ opacity:.7; }
+  #nextCourseMsg .nc-go{ margin-top:8px; font-size:13px; font-weight:700; color:var(--neutral); }
   /* ⑨ 後続バス */
   .fn-row{ margin-top:12px; width:100%; max-width:460px; display:flex; gap:8px; }
   .nextbus-btn{ flex:1; padding:14px 6px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:14px; font-weight:700; white-space:nowrap; }   /* ③ コースボタンと同等の大きさ */
@@ -868,12 +872,18 @@
     const nx=(idx>=0) ? list[idx+1] : null;
     if(nx){
       const t=(nx.departure_time||'').replace(/^0/,'');   // 07:30 → 7:30
-      el.className='show';
-      el.innerHTML=`<div class="nc-lbl">次のコース</div>`+
-        `<div class="nc-main">${nx.start_place||'—'} 始発　<span class="nc-time">${t||'--:--'}</span></div>`;
-      speak(`次のコースは、${nx.start_place||''}始発、${(t||'').replace(':','時')}分です`);
+      // ② 今のコースの到着定刻と次の発車定刻の差が30分以上なら休憩を知らせる
+      const a=toMin(course && course.arrival_time), dp=toMin(nx.departure_time);
+      const rest=(a!=null && dp!=null && dp-a>=30) ? (dp-a) : 0;
+      el.className='show tap';
+      el.innerHTML=(rest?`<div class="nc-lbl">${rest}分 休憩が入ります</div>`:`<div class="nc-lbl">次のコース</div>`)+
+        `<div class="nc-main">${nx.start_place||'—'} 始発　<span class="nc-time">${t||'--:--'}</span></div>`+
+        `<div class="nc-go">押すと次のコースへ ▶</div>`;
+      el.onclick=()=> selectCourse(nx);   // ① 押すと次のコースの確認画面へ
+      // 「◯分休憩」は「ぶん」と読まれるため、音声では「◯分の休憩」と言わせて「ふん/ぷん」で読ませる
+      speak((rest?`${rest}分の休憩が入ります。`:'')+`次のコースは、${nx.start_place||''}始発、${(t||'').replace(':','時')}分です`);
     } else {
-      el.className='show end';
+      el.className='show end'; el.onclick=null;   // 本日終了時は押しても何もしない
       el.innerHTML=`<div class="nc-lbl">本日のダイヤ</div>`+
         `<div class="nc-main"><span class="nc-line">本日のダイヤは終了しました。</span>`+
         `<span class="nc-line">お気をつけて車庫へ</span><span class="nc-line">お戻りください。</span></div>`;
@@ -976,6 +986,7 @@
     $('cfHead').textContent = `ダイヤ ${zdia(currentDiaNo)} ・ ${dayType===1?'平日':'土日祝'}`;
     $('cfDest').textContent = `この便は「${course.end_place||'—'}」行きです`;
     $('cfRows').innerHTML =
+      `<div class="d-row"><span class="d-k">始発時刻</span><span class="d-v">${(course.departure_time||'--:--').replace(/^0/,'')}</span></div>`+
       `<div class="d-row"><span class="d-k">ダイヤ番号</span><span class="d-v">${zdia(currentDiaNo)}</span></div>`+
       `<div class="d-row"><span class="d-k">タッチ番号</span><span class="d-v">${course.touch_no||'—'}</span></div>`+
       (course.digital_no?`<div class="d-row"><span class="d-k">デジタル番号</span><span class="d-v">${course.digital_no}</span></div>`:'');
