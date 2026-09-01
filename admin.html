@@ -74,6 +74,7 @@
 
     <div class="tabs">
       <button data-tab="staff" class="on">運転者・権限</button>
+      <button data-tab="stops">バス停</button>
       <button data-tab="import">ダイヤ取込</button>
     </div>
 
@@ -110,6 +111,35 @@
         </div>
         <div class="msg" id="rpMsg"></div>
         <div class="note">再設定するとその人の既存ログインは切れます。新しいパスワードを本人にお伝えください。</div>
+      </div>
+    </section>
+
+    <!-- バス停 -->
+    <section id="tab-stops" class="hide">
+      <div class="card">
+        <h2>バス停を探す</h2>
+        <div class="row">
+          <div style="flex:2"><label>バス停名・フリガナ（一部でOK）</label>
+            <input id="bsQ" placeholder="例: ビッグ / びっぐ"></div>
+          <button class="sec" id="btnBsSearch">検索</button>
+          <button class="sec" id="btnBsDup">表記ゆれを探す</button>
+        </div>
+        <div id="bsResult"></div>
+        <div class="note">名称を直すと、ドラサポ・バス停エディタ・乗務記録のすべてに反映されます（同じDBを使っています）。</div>
+      </div>
+
+      <div class="card hide" id="bsEditCard">
+        <h2>バス停を修正</h2>
+        <div class="row">
+          <div><label>バス停名</label><input id="bsName"></div>
+          <div><label>フリガナ</label><input id="bsKana"></div>
+        </div>
+        <div class="note" id="bsInfo"></div>
+        <div class="row" style="margin-top:12px">
+          <button class="pri" id="btnBsSave">保存する</button>
+          <button class="sec" id="btnBsCancel">やめる</button>
+        </div>
+        <div class="msg" id="bsMsg"></div>
       </div>
     </section>
 
@@ -181,9 +211,10 @@
       const code=(j&&j.error&&j.error.code)||'';
       if(code==='unauthorized'){ showLogin('ログインの有効期限が切れました。もう一度ログインしてください。'); throw new Error('ログインが必要です'); }
       if(code==='forbidden'){ throw new Error('管理者権限が必要です'); }
-      const retryable = /Too many connections/i.test(em) || r.status===502 || r.status===504;
+      // 混雑・過負荷(429/502/503/504)は待って自動再試行する
+      const retryable = /Too many connections/i.test(em) || [429,502,503,504].includes(r.status);
       if(!retryable || i===tries-1) throw new Error(em);
-      const wait=(i+1)*20; log(`混雑のため ${wait} 秒待って再試行します（${em}）`,'warn'); await sleep(wait*1000);
+      const wait=(i+1)*30; log(`サーバーが混雑しています。${wait} 秒待って再試行します（${em}）`,'warn'); await sleep(wait*1000);
     }
   }
 
@@ -214,8 +245,8 @@
   document.querySelectorAll('.tabs button').forEach(b=>{
     b.addEventListener('click', ()=>{
       document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on', x===b));
-      $('tab-staff').classList.toggle('hide', b.dataset.tab!=='staff');
-      $('tab-import').classList.toggle('hide', b.dataset.tab!=='import');
+      ['staff','stops','import'].forEach(t=> $('tab-'+t).classList.toggle('hide', b.dataset.tab!==t));
+      if(b.dataset.tab==='stops' && !stops.length) loadStops();
     });
   });
 
@@ -280,6 +311,91 @@
     $('btnReset').disabled=false;
   });
 
+  /* ---------- バス停 ---------- */
+  const SECRET='shimabus-fix-2026';   // update_busstops.php と一致させる
+  let stops=[], editing=null;
+  const DIR={1:'上り',2:'下り',9:'その他'};
+  function kataToHira(s){ return (s||'').replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60)); }
+  function norm(s){ return kataToHira((s||'').normalize('NFKC')).replace(/\s+/g,'').toLowerCase(); }
+
+  async function loadStops(){
+    $('bsResult').innerHTML='<div class="note">読み込み中…</div>';
+    try{
+      const r=await fetch('./api/busstops_admin.php?_='+Date.now(),{cache:'no-store'});
+      const j=await r.json();
+      stops=j.stops||[];
+      $('bsResult').innerHTML=`<div class="note">${stops.length} 件のバス停を読み込みました。名前かフリガナで検索してください。</div>`;
+    }catch(e){ $('bsResult').innerHTML='<div class="msg err">バス停の読み込みに失敗しました</div>'; }
+  }
+
+  function renderStops(list, title){
+    if(!list.length){ $('bsResult').innerHTML='<div class="note">見つかりませんでした。</div>'; return; }
+    const rows=list.slice(0,60).map(s=>`<tr>
+      <td>${esc(s.name)}</td><td>${esc(s.kana||'—')}</td><td>${DIR[s.direction]||'—'}</td>
+      <td class="num">${s.has_coord?'✓':'—'}</td>
+      <td style="text-align:right"><button class="sec" data-edit="${s.busstop_id}">修正</button></td></tr>`).join('');
+    $('bsResult').innerHTML=(title?`<div class="note">${esc(title)}</div>`:'')+
+      `<table><tr><th>バス停名</th><th>フリガナ</th><th>方向</th><th>座標</th><th></th></tr>${rows}</table>`+
+      (list.length>60?`<div class="note">${list.length} 件中 60 件を表示しています。検索を絞ってください。</div>`:'');
+    $('bsResult').querySelectorAll('button[data-edit]').forEach(b=>{
+      b.addEventListener('click', ()=> openEdit(+b.dataset.edit));
+    });
+  }
+
+  $('btnBsSearch').addEventListener('click', ()=>{
+    const q=norm($('bsQ').value);
+    if(!q){ renderStops([], ''); return; }
+    renderStops(stops.filter(s=> norm(s.name).includes(q) || norm(s.kana).includes(q)));
+  });
+  $('bsQ').addEventListener('keydown', e=>{ if(e.key==='Enter') $('btnBsSearch').click(); });
+
+  // 同じ読みなのに表記が違うバス停を洗い出す(例: ビッグ２ と ビッグII)
+  $('btnBsDup').addEventListener('click', ()=>{
+    const byKana={};
+    stops.forEach(s=>{ const k=norm(s.kana); if(!k) return; (byKana[k]=byKana[k]||[]).push(s); });
+    const out=[];
+    Object.values(byKana).forEach(arr=>{
+      const names=[...new Set(arr.map(s=>s.name))];
+      if(names.length>1) out.push(...arr);
+    });
+    renderStops(out, out.length?'同じフリガナで名前が違うバス停です。表記を揃えてください。':'');
+  });
+
+  function openEdit(id){
+    const s=stops.find(x=>x.busstop_id===id); if(!s) return;
+    editing=s;
+    $('bsName').value=s.name||''; $('bsKana').value=s.kana||'';
+    $('bsInfo').innerHTML=`ID ${s.busstop_id} ・ ${DIR[s.direction]||'—'}`+
+      (s.has_coord?` ・ <a href="https://www.google.com/maps/search/?api=1&query=${s.lat},${s.lng}" target="_blank" rel="noopener" style="color:var(--accent)">地図で見る</a>`:' ・ 座標なし');
+    msg('bsMsg','',true);
+    $('bsEditCard').classList.remove('hide');
+    $('bsEditCard').scrollIntoView({block:'center'});
+  }
+  $('btnBsCancel').addEventListener('click', ()=>{ editing=null; $('bsEditCard').classList.add('hide'); });
+
+  $('btnBsSave').addEventListener('click', async ()=>{
+    if(!editing) return;
+    const name=$('bsName').value.trim(), kana=$('bsKana').value.trim();
+    if(!name){ msg('bsMsg','バス停名は空にできません。',false); return; }
+    const fix={busstop_id:editing.busstop_id};
+    if(name!==(editing.name||'')) fix.name=name;
+    if(kana!==(editing.kana||'')) fix.kana=kana;
+    if(Object.keys(fix).length===1){ msg('bsMsg','変更がありません。',false); return; }
+    if(!confirm(`「${editing.name}」を修正します。よろしいですか？`)) return;
+    $('btnBsSave').disabled=true;
+    try{
+      const r=await fetch('./api/update_busstops.php',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({secret:SECRET, fixes:[fix]})});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok && j.updated>=1){
+        editing.name=name; editing.kana=kana;   // 手元の一覧にも反映
+        msg('bsMsg','保存しました。ドラサポ・エディタにも反映されます。',true);
+        $('btnBsSearch').click();
+      } else { msg('bsMsg','保存に失敗: '+((j&&j.error)||('HTTP '+r.status)),false); }
+    }catch(e){ msg('bsMsg','通信に失敗しました。',false); }
+    $('btnBsSave').disabled=false;
+  });
+
   /* ---------- ダイヤ取込 ---------- */
   function today(){ const d=new Date(); return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0'); }
   $('date').value=today();
@@ -319,27 +435,27 @@
       for(let oi=0; oi<origins.length; oi++){
         const origin=origins[oi];
         $('phase').textContent=`便データ ${oi+1}/${origins.length}（起点 ${origin}）`;
-        const pre=await call({action:'shimabus.importRoute', origin, target_date:date, trip_offset:0, trip_limit:20, mode:'preview'}, 4);
+        const pre=await call({action:'shimabus.importRoute', origin, target_date:date, trip_offset:0, trip_limit:20, mode:'preview'}, 5);
         const total=pre.summary.trips_total||0;
         log(`起点 ${origin}（${pre.summary.origin_name}）: ${pre.summary.service} / 全 ${total} 便`);
         for(let off=0; off<total; off+=20){
           if(stopFlag) throw new Error('中止しました');
-          const r=await call({action:'shimabus.importRoute', origin, target_date:date, trip_offset:off, trip_limit:20, mode:'commit'}, 4);
+          const r=await call({action:'shimabus.importRoute', origin, target_date:date, trip_offset:off, trip_limit:20, mode:'commit'}, 5);
           log(`  便 ${off+1}〜${Math.min(off+20,total)} を取込（${r.summary.trips}便）`,'ok');
           prog(((oi+Math.min(1,(off+20)/Math.max(1,total)))/origins.length)*50);
-          await sleep(1500);
+          await sleep(5000);
         }
       }
       $('phase').textContent='区間運賃';
       let off=0, guard=0;
       while(guard++<300){
         if(stopFlag) throw new Error('中止しました');
-        const r=await call({action:'shimabus.importFares', target_date:date, pattern_limit:4, pattern_offset:off, mode:'commit'}, 4);
+        const r=await call({action:'shimabus.importFares', target_date:date, pattern_limit:4, pattern_offset:off, mode:'commit'}, 5);
         const s=r.summary;
         log(`  運賃 パターン ${off+1}〜${s.next_offset} / ${s.patterns_total}（${s.rows_written} 行）`,'ok');
         prog(50+(s.next_offset/Math.max(1,s.patterns_total))*50);
         if(s.finished) break;
-        off=s.next_offset; await sleep(1500);
+        off=s.next_offset; await sleep(5000);
       }
       prog(100); $('phase').textContent='完了';
       log('取込が完了しました。ドラサポで料金一覧をご確認ください。','ok');

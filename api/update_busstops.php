@@ -6,8 +6,9 @@
  * 旧値・新値・日時を busstop_fix.log に追記(監査ログ・巻き戻し可)。
  *
  * 【リクエスト】 POST (application/json)
- *   { "secret":"…", "fixes":[ { "busstop_id":123, "lat":28.34, "lng":129.56, "kana":"かさり" }, ... ] }
+ *   { "secret":"…", "fixes":[ { "busstop_id":123, "lat":28.34, "lng":129.56, "kana":"かさり", "name":"笠利" }, ... ] }
  *   - lat/lng は両方あるときのみ座標更新。kana キーがあるときのみフリガナ更新。
+ *   - name は空でない値があるときのみ名称更新(表記ゆれの修正用)。
  * 【安全】合言葉(secret)照合。指定項目のみ更新。全変更をログに残す。
  * 【配置】乗務記録アプリの api/ ディレクトリ(config.php と同じ場所)。
  */
@@ -42,11 +43,8 @@ if ($mysqli->connect_errno) {
 $mysqli->set_charset($db['charset'] ?? 'utf8mb4');
 
 $logf = __DIR__ . '/busstop_fix.log';
-$sel      = $mysqli->prepare('SELECT name, latitude, longitude, kana FROM m_busstop WHERE busstop_id = ?');
-$updBoth  = $mysqli->prepare('UPDATE m_busstop SET latitude = ?, longitude = ?, kana = ?, updated_at = NOW() WHERE busstop_id = ?');
-$updCoord = $mysqli->prepare('UPDATE m_busstop SET latitude = ?, longitude = ?, updated_at = NOW() WHERE busstop_id = ?');
-$updKana  = $mysqli->prepare('UPDATE m_busstop SET kana = ?, updated_at = NOW() WHERE busstop_id = ?');
-if (!$sel || !$updBoth || !$updCoord || !$updKana) {
+$sel = $mysqli->prepare('SELECT name, latitude, longitude, kana FROM m_busstop WHERE busstop_id = ?');
+if (!$sel) {
     http_response_code(500); echo json_encode(['error'=>'prepare失敗: ' . $mysqli->error], JSON_UNESCAPED_UNICODE); exit;
 }
 
@@ -58,37 +56,47 @@ foreach ($fixes as $f) {
     $hasCoord = isset($f['lat']) && isset($f['lng']) && is_numeric($f['lat']) && is_numeric($f['lng'])
                 && (float)$f['lat'] != 0.0 && (float)$f['lng'] != 0.0;
     $hasKana  = array_key_exists('kana', $f);   // kana キーがあれば更新(空文字も可)
-    if (!$hasCoord && !$hasKana) continue;
+    $newName  = array_key_exists('name', $f) ? trim((string)$f['name']) : null;
+    $hasName  = ($newName !== null && $newName !== '');   // 名称は空にできない
+    if (!$hasCoord && !$hasKana && !$hasName) continue;
 
-    $lat = $hasCoord ? (float)$f['lat'] : null;
-    $lng = $hasCoord ? (float)$f['lng'] : null;
+    $lat  = $hasCoord ? (float)$f['lat'] : null;
+    $lng  = $hasCoord ? (float)$f['lng'] : null;
     $kana = $hasKana ? (string)$f['kana'] : null;
 
     // 旧値
     $sel->bind_param('i', $id); $sel->execute();
     $row = $sel->get_result()->fetch_assoc();
     if (!$row) continue;   // 存在しないIDはスキップ
-    $oldLat = $row['latitude']; $oldLng = $row['longitude']; $oldKana = $row['kana']; $name = $row['name'];
+    $oldLat = $row['latitude']; $oldLng = $row['longitude']; $oldKana = $row['kana']; $oldName = $row['name'];
 
-    if ($hasCoord && $hasKana) {
-        $updBoth->bind_param('ddsi', $lat, $lng, $kana, $id); $updBoth->execute();
-    } elseif ($hasCoord) {
-        $updCoord->bind_param('ddi', $lat, $lng, $id); $updCoord->execute();
-    } else {
-        $updKana->bind_param('si', $kana, $id); $updKana->execute();
-    }
+    // 変更する項目だけを組み立てて更新する
+    $sets = []; $types = ''; $args = [];
+    if ($hasCoord) { $sets[]='latitude = ?'; $sets[]='longitude = ?'; $types.='dd'; $args[]=$lat; $args[]=$lng; }
+    if ($hasKana)  { $sets[]='kana = ?';     $types.='s';  $args[]=$kana; }
+    if ($hasName)  { $sets[]='name = ?';     $types.='s';  $args[]=$newName; }
+    $sets[]='updated_at = NOW()';
+    $types.='i'; $args[]=$id;
+
+    $upd = $mysqli->prepare('UPDATE m_busstop SET ' . implode(', ', $sets) . ' WHERE busstop_id = ?');
+    if (!$upd) continue;
+    $upd->bind_param($types, ...$args);
+    $upd->execute();
+    $upd->close();
     $updated++;
 
     // 監査ログ(変更項目のみ)
-    $parts = [date('c'), 'busstop_id=' . $id, $name];
+    $parts = [date('c'), 'busstop_id=' . $id, $oldName];
     if ($hasCoord) $parts[] = 'coord old=' . $oldLat . ',' . $oldLng . ' new=' . $lat . ',' . $lng;
     if ($hasKana)  $parts[] = 'kana old=' . $oldKana . ' new=' . $kana;
+    if ($hasName)  $parts[] = 'name old=' . $oldName . ' new=' . $newName;
     @file_put_contents($logf, implode("\t", $parts) . "\n", FILE_APPEND | LOCK_EX);
 
     $results[] = [
-        'busstop_id' => $id, 'name' => $name,
+        'busstop_id' => $id, 'name' => $hasName ? $newName : $oldName,
         'coord' => $hasCoord ? ['old'=>[$oldLat,$oldLng], 'new'=>[$lat,$lng]] : null,
         'kana'  => $hasKana  ? ['old'=>$oldKana, 'new'=>$kana] : null,
+        'name_changed' => $hasName ? ['old'=>$oldName, 'new'=>$newName] : null,
     ];
 }
 $sel->close(); $updBoth->close(); $updCoord->close(); $updKana->close(); $mysqli->close();
