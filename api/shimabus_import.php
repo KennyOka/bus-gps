@@ -699,6 +699,13 @@ function handle_shimabus_coverage(): void
                          WHERE ts.busstop_id=? AND (ts.departure_time=? OR ts.arrival_time=?){$dateCond}
                          ORDER BY t.target_date DESC LIMIT 1");
 
+    // 始発停がサイネージ無し(i=xxx等)のときに使う、同コース上の代替起点
+    $altOrigin = $db->prepare(
+        "SELECT b.src_busstop_id, b.name
+           FROM m_dia_course_stop cs JOIN m_busstop b ON b.busstop_id = cs.busstop_id
+          WHERE cs.dia_course_id = ? AND b.src_busstop_id REGEXP '^[0-9]+$'
+          ORDER BY cs.seq LIMIT 1");
+
     $total=0; $noTrip=0; $noFare=0; $ok=0;
     $need=[];   // src_busstop_id => ['name','busstop_id','courses'=>n]
     foreach ($courses as $c) {
@@ -718,10 +725,20 @@ function handle_shimabus_coverage(): void
         elseif (!(int)$row['has_fare']) { $noFare++; $lack = true; }
         else                          { $ok++; }
         if ($lack) {
-            $src = (string)($c['src_busstop_id'] ?? '');
+            // 起点に使えるのは数値のID(=サイネージがある停)だけ。始発停が "i=315" のように
+            // サイネージを持たない停の場合は、同じコースの経由停から数値IDの停を代わりに使う。
+            $src  = (string)($c['src_busstop_id'] ?? '');
+            $name = $c['start_name'];
+            $via  = false;
+            if (!preg_match('/^\d+$/', $src)) {
+                $alt = $altOrigin->execute([(int)$c['dia_course_id']]) ? $altOrigin->fetch() : null;
+                if ($alt) { $src = (string)$alt['src_busstop_id']; $name = $alt['name']; $via = true; }
+                else      { $src = ''; }
+            }
             $key = $src !== '' ? $src : ('?' . $c['start_busstop_id']);
-            if (!isset($need[$key])) $need[$key] = ['origin'=>$src, 'name'=>$c['start_name'],
-                                                    'busstop_id'=>(int)$c['start_busstop_id'], 'courses'=>0, 'sample'=>[]];
+            if (!isset($need[$key])) $need[$key] = ['origin'=>$src, 'name'=>$name,
+                                                    'busstop_id'=>(int)$c['start_busstop_id'],
+                                                    'via'=>$via, 'courses'=>0, 'sample'=>[]];
             $need[$key]['courses']++;
             if (count($need[$key]['sample']) < 3) $need[$key]['sample'][] = 'ダイヤ'.ltrim($c['dia_no'],'0').'-'.$c['seq'];
         }

@@ -290,7 +290,7 @@
       log('カバー状況を調べています…');
       const d=await call({action:'shimabus.coverage', day_type:+$('dayType').value});
       lastSuggest=(d.suggest_origins||[]).filter(x=>x.origin);
-      const rows=lastSuggest.map(s=>`<tr><td>${esc(s.name)}</td><td class="num">${esc(s.origin)}</td><td class="num">${s.courses}</td><td>${esc((s.sample||[]).join(', '))}</td></tr>`).join('');
+      const rows=lastSuggest.map(s=>`<tr><td>${esc(s.name)}${s.via?' <span class="note">(経由停で代用)</span>':''}</td><td class="num">${esc(s.origin)}</td><td class="num">${s.courses}</td><td>${esc((s.sample||[]).join(', '))}</td></tr>`).join('');
       $('coverage').innerHTML=
         `<table><tr><th>コース総数</th><th>揃っている</th><th>便が無い</th><th>運賃が無い</th></tr>`+
         `<tr><td class="num">${d.courses_total}</td><td class="num">${d.ok}</td><td class="num">${d.no_trip}</td><td class="num">${d.no_fare}</td></tr></table>`+
