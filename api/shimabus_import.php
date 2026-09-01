@@ -687,12 +687,17 @@ function handle_shimabus_coverage(): void
     $st = $db->prepare($sql); $st->execute([$dayType]);
     $courses = $st->fetchAll();
 
-    // 突合: 始発停+発時刻 → src_trip(あれば運賃の有無も見る)
-    $q = $tgt
-        ? $db->prepare("SELECT t.src_trip_id, EXISTS(SELECT 1 FROM src_fare f WHERE f.src_trip_id=t.src_trip_id) AS has_fare
-                          FROM src_trip t WHERE t.origin_busstop_id=? AND t.first_departure=? AND t.target_date=? ORDER BY t.target_date DESC LIMIT 1")
-        : $db->prepare("SELECT t.src_trip_id, EXISTS(SELECT 1 FROM src_fare f WHERE f.src_trip_id=t.src_trip_id) AS has_fare
-                          FROM src_trip t WHERE t.origin_busstop_id=? AND t.first_departure=? ORDER BY t.target_date DESC LIMIT 1");
+    // 突合(fares.php と同じ考え方):
+    //   ① 便の始発停+発時刻が一致  ② その停をその時刻に通る便(コースが便の途中から始まる場合)
+    $dateCond = $tgt ? ' AND t.target_date=?' : '';
+    $q = $db->prepare("SELECT t.src_trip_id, EXISTS(SELECT 1 FROM src_fare f WHERE f.src_trip_id=t.src_trip_id) AS has_fare
+                         FROM src_trip t
+                        WHERE t.origin_busstop_id=? AND t.first_departure=?{$dateCond}
+                        ORDER BY t.target_date DESC LIMIT 1");
+    $q2 = $db->prepare("SELECT t.src_trip_id, EXISTS(SELECT 1 FROM src_fare f WHERE f.src_trip_id=t.src_trip_id) AS has_fare
+                          FROM src_trip_stop ts JOIN src_trip t ON t.src_trip_id = ts.src_trip_id
+                         WHERE ts.busstop_id=? AND (ts.departure_time=? OR ts.arrival_time=?){$dateCond}
+                         ORDER BY t.target_date DESC LIMIT 1");
 
     $total=0; $noTrip=0; $noFare=0; $ok=0;
     $need=[];   // src_busstop_id => ['name','busstop_id','courses'=>n]
@@ -702,6 +707,12 @@ function handle_shimabus_coverage(): void
         if ($tgt) $args[] = $tgt;
         $q->execute($args);
         $row = $q->fetch();
+        if (!$row) {   // 便の途中から始まるコースを拾う
+            $args2 = [ (int)$c['start_busstop_id'], $c['dep'], $c['dep'] ];
+            if ($tgt) $args2[] = $tgt;
+            $q2->execute($args2);
+            $row = $q2->fetch();
+        }
         $lack = false;
         if (!$row)                    { $noTrip++;  $lack = true; }
         elseif (!(int)$row['has_fare']) { $noFare++; $lack = true; }

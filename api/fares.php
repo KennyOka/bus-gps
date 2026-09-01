@@ -44,11 +44,23 @@ if (!$course) { echo json_encode(['error'=>'コースが見つかりません'],
 $originId = (int)$course['start_busstop_id'];
 $dep      = $course['dep'];
 
-// 2) 始発停+発時刻 で src_trip を特定(なければ始発停のみで最新便)
+// 2) src_trip を特定する
+//    ① 便の始発停+発時刻が一致（コースが便の始発から始まる場合）
+//    ② その停をその時刻に通る便（コースが便の途中から始まる場合。運転士の交代など）
+//    ③ 始発停だけで最新便（最後の手段）
 $tripId = 0;
 $t1 = $mysqli->prepare("SELECT src_trip_id FROM src_trip WHERE origin_busstop_id = ? AND first_departure = ? ORDER BY target_date DESC LIMIT 1");
 if ($t1) { $t1->bind_param('is', $originId, $dep); $t1->execute();
            if ($r = $t1->get_result()->fetch_assoc()) $tripId = (int)$r['src_trip_id']; $t1->close(); }
+if (!$tripId) {
+    $tm = $mysqli->prepare(
+      "SELECT ts.src_trip_id
+         FROM src_trip_stop ts JOIN src_trip t ON t.src_trip_id = ts.src_trip_id
+        WHERE ts.busstop_id = ? AND (ts.departure_time = ? OR ts.arrival_time = ?)
+        ORDER BY t.target_date DESC LIMIT 1");
+    if ($tm) { $tm->bind_param('iss', $originId, $dep, $dep); $tm->execute();
+               if ($r = $tm->get_result()->fetch_assoc()) $tripId = (int)$r['src_trip_id']; $tm->close(); }
+}
 if (!$tripId) {
     $t2 = $mysqli->prepare("SELECT src_trip_id FROM src_trip WHERE origin_busstop_id = ? ORDER BY target_date DESC LIMIT 1");
     if ($t2) { $t2->bind_param('i', $originId); $t2->execute();
