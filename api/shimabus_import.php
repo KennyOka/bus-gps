@@ -673,86 +673,121 @@ function handle_shimabus_coverage(): void
 
     $db = pdo();
 
-    // 対象コース(実車)と始発停・発時刻
-    $sql = "SELECT c.dia_course_id, d.dia_no, c.seq, c.start_busstop_id,
+    // 対象コース(実車)。停留所データ(m_dia_course_stop)の件数も一緒に取る。
+    // ドラサポは停留所データが無いと走れないので、これも「揃っている」の条件にする。
+    $sql = "SELECT c.dia_course_id, d.dia_no, c.seq, c.start_busstop_id, c.touch_no,
                    TIME_FORMAT(c.departure_time,'%H:%i:%s') AS dep,
                    COALESCE(c.start_name, s.name) AS start_name,
-                   b.src_busstop_id
+                   s.src_busstop_id,
+                   (SELECT COUNT(*) FROM m_dia_course_stop cs WHERE cs.dia_course_id = c.dia_course_id) AS stop_cnt
               FROM m_dia d
               JOIN m_dia_course c ON c.dia_id = d.dia_id AND c.category = 3
               LEFT JOIN m_busstop s ON s.busstop_id = c.start_busstop_id
-              LEFT JOIN m_busstop b ON b.busstop_id = c.start_busstop_id
              WHERE d.day_type = ? AND d.is_active = 1
              ORDER BY d.dia_no, c.seq";
     $st = $db->prepare($sql); $st->execute([$dayType]);
     $courses = $st->fetchAll();
 
-    // 突合(fares.php と同じ考え方):
-    //   ① 便の始発停+発時刻が一致  ② その停をその時刻に通る便(コースが便の途中から始まる場合)
+    // 便の突合:
+    //   ① 便の始発停+発時刻が一致
+    //   ② その停をその時刻に通る便(コースが便の途中から始まる場合)
+    //   ③ 系統番号+発時刻(fill_dia_course_stop.sql と同じ条件。始発停が未設定のコースも拾える)
     $dateCond = $tgt ? ' AND t.target_date=?' : '';
-    $q = $db->prepare("SELECT t.src_trip_id, EXISTS(SELECT 1 FROM src_fare f WHERE f.src_trip_id=t.src_trip_id) AS has_fare
-                         FROM src_trip t
-                        WHERE t.origin_busstop_id=? AND t.first_departure=?{$dateCond}
-                        ORDER BY t.target_date DESC LIMIT 1");
-    $q2 = $db->prepare("SELECT t.src_trip_id, EXISTS(SELECT 1 FROM src_fare f WHERE f.src_trip_id=t.src_trip_id) AS has_fare
+    $hasFare  = 'EXISTS(SELECT 1 FROM src_fare f WHERE f.src_trip_id=t.src_trip_id) AS has_fare';
+    $q  = $db->prepare("SELECT t.src_trip_id, {$hasFare} FROM src_trip t
+                         WHERE t.origin_busstop_id=? AND t.first_departure=?{$dateCond}
+                         ORDER BY t.target_date DESC LIMIT 1");
+    $q2 = $db->prepare("SELECT t.src_trip_id, {$hasFare}
                           FROM src_trip_stop ts JOIN src_trip t ON t.src_trip_id = ts.src_trip_id
                          WHERE ts.busstop_id=? AND (ts.departure_time=? OR ts.arrival_time=?){$dateCond}
                          ORDER BY t.target_date DESC LIMIT 1");
+    $q3 = $db->prepare("SELECT t.src_trip_id, {$hasFare} FROM src_trip t
+                         WHERE t.keito_no=? AND t.first_departure=?{$dateCond}
+                         ORDER BY t.target_date DESC LIMIT 1");
 
-    // 始発停がサイネージ無し(i=xxx等)のときに使う、同コース上の代替起点
+    // 起点(しまバス側の数値ID)の決め方
+    //   始発停のID → 無ければ同コースの経由停 → 無ければ始発地の名前から推定
     $altOrigin = $db->prepare(
         "SELECT b.src_busstop_id, b.name
            FROM m_dia_course_stop cs JOIN m_busstop b ON b.busstop_id = cs.busstop_id
           WHERE cs.dia_course_id = ? AND b.src_busstop_id REGEXP '^[0-9]+$'
           ORDER BY cs.seq LIMIT 1");
+    $byName = $db->prepare(
+        "SELECT src_busstop_id, name FROM m_busstop
+          WHERE src_busstop_id REGEXP '^[0-9]+$' AND is_active = 1
+            AND (name = ? OR name LIKE CONCAT('%', ?, '%'))
+          ORDER BY (name = ?) DESC, CHAR_LENGTH(name) LIMIT 1");
 
-    $total=0; $noTrip=0; $noFare=0; $ok=0;
-    $need=[];   // src_busstop_id => ['name','busstop_id','courses'=>n]
+    $total = 0; $ok = 0; $noTrip = 0; $noFare = 0; $noStops = 0; $stopsMissing = 0;
+    $need = [];                                   // 取込が必要(起点ごと)
+    $fill = ['courses' => 0, 'sample' => []];     // 便も運賃もあるが停留所データが無い → 補完SQLで直る
     foreach ($courses as $c) {
         $total++;
-        $args = [ (int)$c['start_busstop_id'], $c['dep'] ];
-        if ($tgt) $args[] = $tgt;
-        $q->execute($args);
-        $row = $q->fetch();
-        if (!$row) {   // 便の途中から始まるコースを拾う
-            $args2 = [ (int)$c['start_busstop_id'], $c['dep'], $c['dep'] ];
-            if ($tgt) $args2[] = $tgt;
-            $q2->execute($args2);
-            $row = $q2->fetch();
-        }
-        $lack = false;
-        if (!$row)                    { $noTrip++;  $lack = true; }
-        elseif (!(int)$row['has_fare']) { $noFare++; $lack = true; }
-        else                          { $ok++; }
-        if ($lack) {
-            // 起点に使えるのは数値のID(=サイネージがある停)だけ。始発停が "i=315" のように
-            // サイネージを持たない停の場合は、同じコースの経由停から数値IDの停を代わりに使う。
-            $src  = (string)($c['src_busstop_id'] ?? '');
-            $name = $c['start_name'];
-            $via  = false;
-            if (!preg_match('/^\d+$/', $src)) {
-                $alt = $altOrigin->execute([(int)$c['dia_course_id']]) ? $altOrigin->fetch() : null;
-                if ($alt) { $src = (string)$alt['src_busstop_id']; $name = $alt['name']; $via = true; }
-                else      { $src = ''; }
+        $label = 'ダイヤ' . ltrim($c['dia_no'], '0') . '-' . $c['seq'];
+        $sid   = (int) $c['start_busstop_id'];
+        $touch = trim((string) ($c['touch_no'] ?? ''));
+        if ((int) $c['stop_cnt'] === 0) $stopsMissing++;
+
+        $row = null;
+        if ($sid) {
+            $a = [$sid, $c['dep']];               if ($tgt) $a[] = $tgt;
+            $q->execute($a);  $row = $q->fetch() ?: null;
+            if (!$row) {
+                $a = [$sid, $c['dep'], $c['dep']]; if ($tgt) $a[] = $tgt;
+                $q2->execute($a); $row = $q2->fetch() ?: null;
             }
-            $key = $src !== '' ? $src : ('?' . $c['start_busstop_id']);
-            if (!isset($need[$key])) $need[$key] = ['origin'=>$src, 'name'=>$name,
-                                                    'busstop_id'=>(int)$c['start_busstop_id'],
-                                                    'via'=>$via, 'courses'=>0, 'sample'=>[]];
-            $need[$key]['courses']++;
-            if (count($need[$key]['sample']) < 3) $need[$key]['sample'][] = 'ダイヤ'.ltrim($c['dia_no'],'0').'-'.$c['seq'];
         }
+        if (!$row && $touch !== '') {
+            $a = [$touch, $c['dep']];             if ($tgt) $a[] = $tgt;
+            $q3->execute($a); $row = $q3->fetch() ?: null;
+        }
+
+        if (!$row)                          { $noTrip++; }
+        elseif (!(int) $row['has_fare'])    { $noFare++; }
+        elseif ((int) $c['stop_cnt'] === 0) {
+            $noStops++; $fill['courses']++;
+            if (count($fill['sample']) < 5) $fill['sample'][] = $label;
+            continue;
+        } else { $ok++; continue; }
+
+        // ここに来たのは「取込が必要」なコース
+        $src  = (string) ($c['src_busstop_id'] ?? '');
+        $name = (string) ($c['start_name'] ?? '');
+        $via  = '';
+        if (!preg_match('/^\d+$/', $src)) {
+            $src = '';
+            if ($altOrigin->execute([(int) $c['dia_course_id']]) && ($x = $altOrigin->fetch())) {
+                $src = (string) $x['src_busstop_id']; $name = $x['name']; $via = 'stop';
+            } elseif ($name !== '' && $byName->execute([$name, $name, $name]) && ($x = $byName->fetch())) {
+                $src = (string) $x['src_busstop_id']; $name = $x['name']; $via = 'name';
+            }
+        }
+        // 起点が決まらないコースも消さずに残す(始発地名ごとにまとめる)
+        if ($name === '') $name = '(始発地未設定)';
+        $key = $src !== '' ? $src : ('?' . $name);
+        if (!isset($need[$key])) {
+            $need[$key] = ['origin' => $src, 'name' => $name, 'busstop_id' => $sid,
+                           'via' => $via, 'unknown' => ($src === ''), 'courses' => 0, 'sample' => []];
+        }
+        $need[$key]['courses']++;
+        if (count($need[$key]['sample']) < 3) $need[$key]['sample'][] = $label;
     }
-    // 不足の多い順(=1回の取込で効果が大きい順)
-    usort($need, static fn($a,$b) => $b['courses'] <=> $a['courses']);
+    // 起点が分かるものを先に、不足の多い順(=1回の取込で効果が大きい順)
+    usort($need, static fn($a, $b) => [$a['unknown'], -$a['courses']] <=> [$b['unknown'], -$b['courses']]);
+    $unknown = 0;
+    foreach ($need as $n) if ($n['unknown']) $unknown += $n['courses'];
 
     json_ok([
-        'day_type'      => $dayType,
-        'target_date'   => $tgt ?: 'すべて',
-        'courses_total' => $total,
-        'ok'            => $ok,       // 便も運賃も揃っている
-        'no_trip'       => $noTrip,   // 便そのものが未取込
-        'no_fare'       => $noFare,   // 便はあるが運賃が無い
-        'suggest_origins' => array_values($need),   // origin= に指定する値(しまバス側ID)
+        'day_type'        => $dayType,
+        'target_date'     => $tgt ?: 'すべて',
+        'courses_total'   => $total,
+        'ok'              => $ok,            // 便・運賃・停留所データが全部揃っている(ドラサポで走れる)
+        'no_trip'         => $noTrip,        // 便そのものが未取込
+        'no_fare'         => $noFare,        // 便はあるが運賃が無い
+        'no_stops'        => $noStops,       // 便も運賃もあるが停留所データが無い(補完SQLで直る)
+        'stops_missing_total'    => $stopsMissing, // 停留所データが無いコースの総数(便なし含む)
+        'unknown_origin_courses' => $unknown,      // 起点が決まらず自動取込できないコース数
+        'need_fill'       => $fill,
+        'suggest_origins' => array_values($need),  // origin が空 = 起点不明
     ]);
 }

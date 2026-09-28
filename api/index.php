@@ -8,6 +8,7 @@ declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/import.php';
 require __DIR__ . '/shimabus_import.php';
+require __DIR__ . '/gcal.php';
 
 /* ---- CORS（別オリジン時のみ） ---- */
 $allowOrigin = $GLOBALS['CONFIG']['cors']['allow_origin'] ?? '';
@@ -56,9 +57,16 @@ try {
         case 'summary.yearMemo': handle_summary_year_memo(); break; // 年間メモGemini要約
         case 'record.export':    handle_record_export();    break; // 月次CSV用の明細行
         case 'record.get':       handle_record_get();       break;
-        case 'record.save':      handle_record_save();      break; // 下書き保存(upsert)
+        case 'record.save':      handle_record_save();      break;
+        // ---- ドラサポ連携 ----
+        case 'record.findDraft':   handle_record_find_draft();   break; // 業務年月日から下書きを探す
+        case 'record.pushArrival': handle_record_push_arrival(); break; // 終点到着時刻を書き込む // 下書き保存(upsert)
         case 'record.register':  handle_record_register();  break; // 入力完了(走行キロ計算+登録済)
         case 'record.delete':    handle_record_delete();    break;
+
+        // ---- シフト（Googleカレンダー連携） ----
+        case 'shift.get':        handle_shift_get();        break; // 指定日のシフトを1件返す(入力画面の初期値)
+        case 'shift.sync':       handle_shift_sync();       break; // カレンダー→t_shift 同期
 
         // ---- PDF ----
         case 'pdf.generate':     handle_pdf_generate();     break;
@@ -119,7 +127,8 @@ function handle_logout(): void
 
 function handle_me(): void
 {
-    json_ok(['employee' => require_auth()]);
+    $u = require_auth();
+    json_ok(['employee' => $u, 'shift_synced_at' => shift_last_synced($u['employee_no'])]);
 }
 
 /* ================================================================== */
@@ -208,7 +217,7 @@ function handle_dia_courses(): void
     }
 
     $cs = pdo()->prepare(
-        'SELECT c.seq, c.category,
+        'SELECT c.dia_course_id, c.seq, c.category,
                 COALESCE(c.start_name, bs_s.name) AS start_place,
                 COALESCE(c.end_name, bs_e.name)   AS end_place,
                 c.departure_time,
@@ -418,7 +427,7 @@ function handle_record_list(): void
 
     $st = pdo()->prepare(
         'SELECT work_record_id, work_date, dia_no, status, dest, memo,
-                charter_group, work_type, is_charter, pdf_file,
+                charter_group, work_type, is_charter, pdf_file, work_min_total,
                 (COALESCE(distance1,0)+COALESCE(distance2,0)+COALESCE(distance3,0)+COALESCE(distance4,0)) AS distance_total
            FROM t_work_record
           WHERE ' . $where . '
@@ -451,6 +460,30 @@ function handle_summary(): void
     );
     $st->execute([$u['employee_no'], $from, $to]);
     $m = $st->fetch();
+
+    // 稼働時間(当月): 区分別合計(分)＋総合計。給与計算用に登録時確定した work_min1-5/total を単純SUM。
+    $st6 = pdo()->prepare(
+        "SELECT COALESCE(SUM(work_min1),0) AS m1, COALESCE(SUM(work_min2),0) AS m2, COALESCE(SUM(work_min3),0) AS m3,
+                COALESCE(SUM(work_min4),0) AS m4, COALESCE(SUM(work_min5),0) AS m5, COALESCE(SUM(work_min_total),0) AS total,
+                COALESCE(SUM(work_min_binding),0) AS binding
+           FROM t_work_record
+          WHERE employee_no = ? AND work_date >= ? AND work_date < ? AND status = 2"
+    );
+    $st6->execute([$u['employee_no'], $from, $to]);
+    $wm = $st6->fetch();
+
+    // 日別の稼働時間(当月・給与計算の日次確認用)
+    $st7 = pdo()->prepare(
+        "SELECT work_date, COALESCE(SUM(work_min_total),0) AS mins, COALESCE(SUM(work_min_binding),0) AS binding
+           FROM t_work_record
+          WHERE employee_no = ? AND work_date >= ? AND work_date < ? AND status = 2
+          GROUP BY work_date ORDER BY work_date"
+    );
+    $st7->execute([$u['employee_no'], $from, $to]);
+    $daily = [];
+    foreach ($st7->fetchAll() as $r) {
+        $daily[] = ['date' => $r['work_date'], 'mins' => (int) $r['mins'], 'binding' => (int) $r['binding']];
+    }
 
     // 累計走行距離（この社員の全期間）
     $st2 = pdo()->prepare(
@@ -515,6 +548,12 @@ function handle_summary(): void
         'by_type'    => $byType,
         'by_vehicle' => $byVehicle,
         'by_group'   => $byGroup,
+        'work_min'   => [
+            1 => (int) $wm['m1'], 2 => (int) $wm['m2'], 3 => (int) $wm['m3'],
+            4 => (int) $wm['m4'], 5 => (int) $wm['m5'], 'total' => (int) $wm['total'],
+            'binding' => (int) $wm['binding'],
+        ],
+        'daily'      => $daily,
     ]);
 }
 
@@ -547,6 +586,29 @@ function handle_summary_year(): void
     foreach ($st->fetchAll() as $r) { $monthly[(int) $r['m']] = (int) $r['dist']; }
     $monthDist = [];
     for ($i = 1; $i <= 12; $i++) { $monthDist[] = $monthly[$i]; }
+
+    // 月別稼働時間(分)＋年間の区分別稼働時間（給与計算用）
+    $stw = pdo()->prepare(
+        "SELECT MONTH(work_date) AS m, COALESCE(SUM(work_min_total),0) AS mins
+           FROM t_work_record
+          WHERE employee_no = ? AND work_date >= ? AND work_date < ? AND status = 2
+          GROUP BY MONTH(work_date)"
+    );
+    $stw->execute($args);
+    $wmonthly = array_fill(1, 12, 0);
+    foreach ($stw->fetchAll() as $r) { $wmonthly[(int) $r['m']] = (int) $r['mins']; }
+    $monthWorkMin = [];
+    for ($i = 1; $i <= 12; $i++) { $monthWorkMin[] = $wmonthly[$i]; }
+
+    $stw2 = pdo()->prepare(
+        "SELECT COALESCE(SUM(work_min1),0) AS m1, COALESCE(SUM(work_min2),0) AS m2, COALESCE(SUM(work_min3),0) AS m3,
+                COALESCE(SUM(work_min4),0) AS m4, COALESCE(SUM(work_min5),0) AS m5, COALESCE(SUM(work_min_total),0) AS total,
+                COALESCE(SUM(work_min_binding),0) AS binding
+           FROM t_work_record
+          WHERE employee_no = ? AND work_date >= ? AND work_date < ? AND status = 2"
+    );
+    $stw2->execute($args);
+    $wy = $stw2->fetch();
 
     // 運行種別（年間）
     $st2 = pdo()->prepare(
@@ -593,6 +655,12 @@ function handle_summary_year(): void
         'by_type'     => $byType,
         'by_vehicle'  => $byVehicle,
         'by_dest'     => $byDest,
+        'month_work_min' => $monthWorkMin,
+        'work_min'    => [
+            1 => (int) $wy['m1'], 2 => (int) $wy['m2'], 3 => (int) $wy['m3'],
+            4 => (int) $wy['m4'], 5 => (int) $wy['m5'], 'total' => (int) $wy['total'],
+            'binding' => (int) $wy['binding'],
+        ],
     ]);
 }
 
@@ -783,23 +851,51 @@ function handle_record_save(): void
         }
 
         // コースは全消し→再挿入（順番=送信順で再採番）
+        // 既存行を退避しておく。ドラサポが記録した着時刻(arrival_source=1)を、
+        // 古い画面からの保存で消してしまわないようにするため。
+        $prevById = []; $prevBySeq = [];
+        $pv = $db->prepare('SELECT seq, dia_course_id, arrival_time, arrival_source FROM t_work_course WHERE work_record_id = ?');
+        $pv->execute([$id]);
+        foreach ($pv->fetchAll() as $p) {
+            $prevBySeq[(int) $p['seq']] = $p;
+            if ($p['dia_course_id'] !== null) $prevById[(int) $p['dia_course_id']] = $p;
+        }
+
         $db->prepare('DELETE FROM t_work_course WHERE work_record_id = ?')->execute([$id]);
         $ins = $db->prepare(
             'INSERT INTO t_work_course
-                (work_record_id, seq, category, vehicle_no, start_place, end_place, departure_time, arrival_time, note)
-             VALUES (?,?,?,?,?,?,?,?,?)'
+                (work_record_id, seq, dia_course_id, category, vehicle_no, start_place, end_place,
+                 departure_time, arrival_time, arrival_source, note)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?)'
         );
         $seq = 1;
         foreach ($courses as $c) {
+            $cseq = (int) ($c['seq'] ?? $seq);
+            $dcid = isset($c['dia_course_id']) && $c['dia_course_id'] !== '' ? (int) $c['dia_course_id'] : null;
+
+            // 同じコースの保存済みデータを探す(ダイヤコースID優先、無ければ並び順)
+            $prev = ($dcid !== null && isset($prevById[$dcid])) ? $prevById[$dcid]
+                  : ($prevBySeq[$cseq] ?? null);
+            if ($dcid === null && $prev && $prev['dia_course_id'] !== null) $dcid = (int) $prev['dia_course_id'];
+
+            $arr = $c['arrival_time'] ?? null;
+            $src = array_key_exists('arrival_source', $c) ? (int) $c['arrival_source'] : null;
+
+            // 保存済みがドラサポの実績(1)で、運転者が手入力(2)で上書きしたわけでないなら、実績を守る
+            if ($prev && (int) $prev['arrival_source'] === 1 && $src !== 2) {
+                $arr = $prev['arrival_time'];
+                $src = 1;
+            }
+            if ($src === null) $src = $prev ? (int) $prev['arrival_source'] : 0;
+
             $ins->execute([
-                $id,
-                (int) ($c['seq'] ?? $seq),
+                $id, $cseq, $dcid,
                 $c['category']       ?? null,
                 $c['vehicle_no']     ?? null,
                 $c['start_place']    ?? null,
                 $c['end_place']      ?? null,
                 $c['departure_time'] ?? null,
-                $c['arrival_time']   ?? null,
+                $arr, $src,
                 $c['note']           ?? null,
             ]);
             $seq++;
@@ -820,7 +916,7 @@ function handle_record_register(): void
     $id = (int) require_param('id');
 
     $st = pdo()->prepare(
-        'SELECT dest, meter_out1, meter_in1, meter_out2, meter_in2,
+        'SELECT dest, start_call, end_call, meter_out1, meter_in1, meter_out2, meter_in2,
                 meter_out3, meter_in3, meter_out4, meter_in4
            FROM t_work_record WHERE work_record_id = ? AND employee_no = ?'
     );
@@ -862,11 +958,178 @@ function handle_record_register(): void
         $id,
     ]);
 
+    // 稼働時間(分)を区分別に計算・保存（将来の給与計算用。登録時に確定し以後は履歴として固定）
+    // 拘束時間(binding)・休憩(rest)も compute_work_minutes 内で算出済み（点呼はDBから読む）。
+    $wm = compute_work_minutes($id);
+    // 保存に失敗しても登録自体は成立させる（列未追加のDBでも動くようにする）。
+    try {
+        pdo()->prepare(
+            'UPDATE t_work_record SET work_min1=?, work_min2=?, work_min3=?, work_min4=?, work_min5=?, work_min_total=?, work_min_binding=?
+              WHERE work_record_id = ?'
+        )->execute([$wm[1], $wm[2], $wm[3], $wm[4], $wm[5], $wm['total'], $wm['binding'], $id]);
+    } catch (Throwable $e) { /* 稼働時間列が未適用のDBでは保存だけスキップ（表示は返却値で行う） */ }
+
     // 登録＝実績確定時に、この記録の回送パターンを運転者別ルールとして学習(上書き)
     try { learn_deadhead_rules(pdo(), (string) $u['employee_no'], $id); }
     catch (Throwable $e) { /* 学習失敗は登録本体を妨げない */ }
 
-    json_ok(['work_record_id' => $id, 'status' => 2]);
+    json_ok(['work_record_id' => $id, 'status' => 2, 'work_minutes' => $wm]);
+}
+
+/* =============================================================
+ *  シフト（Googleカレンダー連携）
+ *   ・入力画面はDBの t_shift だけを見る（APIを毎回叩くと遅く、通信断で入力できなくなるため）
+ *   ・同期は shift.sync（本人の操作 or cron）で行う
+ * ============================================================= */
+
+/** 指定日のシフトを1件返す。無ければ shift=null（=シフト未登録の日）。 */
+function handle_shift_get(): void
+{
+    $u    = require_auth();
+    $date = (string) require_param('date');   // YYYY-MM-DD
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        json_err('bad_param', '日付の形式が不正です。', 400);
+    }
+    $st = pdo()->prepare(
+        'SELECT work_date, kind, dia_no, raw_summary FROM t_shift WHERE employee_no = ? AND work_date = ?'
+    );
+    $st->execute([$u['employee_no'], $date]);
+    $row = $st->fetch();
+    json_ok(['shift' => $row ?: null, 'synced_at' => shift_last_synced($u['employee_no'])]);
+}
+
+/** この社員のシフトを最後に同期した日時（未同期なら null）。ボタンに「(9/8更新)」と出すのに使う。 */
+function shift_last_synced(string $employeeNo): ?string
+{
+    try {
+        $st = pdo()->prepare('SELECT MAX(synced_at) FROM t_shift WHERE employee_no = ?');
+        $st->execute([$employeeNo]);
+        $v = $st->fetchColumn();
+        return $v ? (string) $v : null;
+    } catch (Throwable $e) {
+        return null;   // t_shift 未作成でも画面は動かす
+    }
+}
+
+/**
+ * Googleカレンダー → t_shift 同期。
+ * 既定は「今日から60日先」まで。取り込むのは colorId が設定と一致する終日イベントのみ。
+ */
+function handle_shift_sync(): void
+{
+    $u = require_auth();
+
+    $st = pdo()->prepare('SELECT calendar_id FROM m_employee WHERE employee_no = ?');
+    $st->execute([$u['employee_no']]);
+    $calendarId = (string) ($st->fetchColumn() ?: '');
+    if ($calendarId === '') {
+        json_err('no_calendar', 'この社員にはカレンダーが設定されていません（m_employee.calendar_id）。', 400);
+    }
+
+    $cfg      = $GLOBALS['CONFIG']['gcal'] ?? [];
+    $colorId  = (string) ($cfg['shift_color_id'] ?? '6');   // シフトを示す色。既定は現行運用の 6
+    // 取り込み期間。過去は「入力漏れに気づいて遡る」ため、未来は「先の七曜表を先取りする」ため。
+    // sync_days(旧・未来のみ)しか無い設定でも動くようにしておく。
+    $past   = (int) param('past',   (int) ($cfg['sync_days_past']   ?? 60));
+    $future = (int) param('future', (int) ($cfg['sync_days_future'] ?? $cfg['sync_days'] ?? 90));
+    $past   = max(0, min(730, $past));
+    $future = max(1, min(730, $future));
+    $from   = (new DateTime('today'))->modify('-' . $past   . ' day')->format('Y-m-d');
+    $to     = (new DateTime('today'))->modify('+' . $future . ' day')->format('Y-m-d');
+
+    try {
+        $events = gcal_fetch_events($calendarId, $from, $to);
+    } catch (Throwable $e) {
+        json_err('gcal_error', $e->getMessage(), 502);
+    }
+
+    $ins = pdo()->prepare(
+        // synced_at はPHP側(Asia/Tokyo)の時刻を渡す。MySQLのNOW()はサーバーのタイムゾーン
+        // 次第で日付がずれ、ボタンの「七曜表(9/8)」表示が1日ずれることがあるため。
+        'INSERT INTO t_shift (employee_no, work_date, kind, dia_no, raw_summary, event_id, synced_at)
+              VALUES (?,?,?,?,?,?,?)
+         ON DUPLICATE KEY UPDATE
+              kind = VALUES(kind), dia_no = VALUES(dia_no), raw_summary = VALUES(raw_summary),
+              event_id = VALUES(event_id), synced_at = VALUES(synced_at)'
+    );
+    $now = date('Y-m-d H:i:s');
+
+    $saved = 0; $skipped = 0; $kinds = []; $keep = [];   // $keep = 今回取り込んだ日付
+    foreach ($events as $ev) {
+        // 色で「シフト」を判別する。私用予定（色なし/別の色）は取り込まない。
+        if ($colorId !== '' && $ev['colorId'] !== $colorId) { $skipped++; continue; }
+        $p = gcal_parse_shift($ev['summary']);
+        if ($p === null) { $skipped++; continue; }
+        $ins->execute([
+            $u['employee_no'], $ev['date'], $p['kind'], $p['dia_no'],
+            mb_substr($ev['summary'], 0, 255), $ev['id'], $now,
+        ]);
+        $saved++;
+        $keep[] = $ev['date'];
+        $kinds[$p['kind']] = ($kinds[$p['kind']] ?? 0) + 1;
+    }
+
+    // カレンダー側で消された/色を外された日はDBからも消す（同期期間内のみ）。
+    // 判定は「今回取り込んだ日付以外」。時刻で比べると、PHP(Asia/Tokyo)とMySQLのNOW()の
+    // タイムゾーンがずれている環境で、今入れた行まで消えてしまうため使わない。
+    $keep = array_values(array_unique($keep));
+    $params = [$u['employee_no'], $from, $to];
+    $sql = 'DELETE FROM t_shift WHERE employee_no = ? AND work_date BETWEEN ? AND ?';
+    if ($keep) {
+        $sql .= ' AND work_date NOT IN (' . implode(',', array_fill(0, count($keep), '?')) . ')';
+        $params = array_merge($params, $keep);
+    }
+    $del = pdo()->prepare($sql);
+    $del->execute($params);
+    $removed = $del->rowCount();
+
+    json_ok(['saved' => $saved, 'skipped' => $skipped, 'removed' => $removed,
+             'from' => $from, 'to' => $to, 'kinds' => $kinds,
+             'synced_at' => shift_last_synced($u['employee_no'])]);
+}
+
+/** t_work_course の各行(区分・発時刻・着時刻)から区分別稼働時間(分)を集計。日跨ぎ(着<発)は+24hとして補正。 */
+function compute_work_minutes(int $workRecordId): array
+{
+    $mins = [1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0];
+    // 拘束時間(分) = 終了点呼 - 始業点呼（日跨ぎは+24h補正）。どちらか未入力ならnull。
+    $binding = null;
+    $hd = pdo()->prepare('SELECT start_call, end_call FROM t_work_record WHERE work_record_id = ?');
+    $hd->execute([$workRecordId]);
+    if ($h = $hd->fetch()) {
+        $sc = $h['start_call'] !== null ? to_minutes_of_day((string) $h['start_call']) : null;
+        $ec = $h['end_call']   !== null ? to_minutes_of_day((string) $h['end_call'])   : null;
+        if ($sc !== null && $ec !== null) {
+            $b = $ec - $sc;
+            if ($b < 0) { $b += 1440; }
+            $binding = $b;
+        }
+    }
+    $st = pdo()->prepare(
+        'SELECT category, departure_time, arrival_time FROM t_work_course WHERE work_record_id = ?'
+    );
+    $st->execute([$workRecordId]);
+    foreach ($st->fetchAll() as $r) {
+        $cat = (int) $r['category'];
+        if (!isset($mins[$cat]) || $r['departure_time'] === null || $r['arrival_time'] === null) { continue; }
+        $dep = to_minutes_of_day((string) $r['departure_time']);
+        $arr = to_minutes_of_day((string) $r['arrival_time']);
+        if ($dep === null || $arr === null) { continue; }
+        $diff = $arr - $dep;
+        if ($diff < 0) { $diff += 1440; }   // 日跨ぎ簡易補正（アプリ内の他ロジックと同様の方式）
+        $mins[$cat] += $diff;
+    }
+    $mins['total']   = array_sum([$mins[1], $mins[2], $mins[3], $mins[4], $mins[5]]);
+    $mins['binding'] = $binding;                                                    // 拘束時間(分)
+    $mins['rest']    = ($binding !== null) ? max(0, $binding - $mins['total']) : null; // 休憩=拘束-稼働
+    return $mins;
+}
+
+/** TIME文字列("HH:MM:SS"/"HH:MM"、MySQLのTIME型は24時超も許容)を当日0時からの分に変換。不正はnull。 */
+function to_minutes_of_day(string $t): ?int
+{
+    if (!preg_match('/^(\d{1,3}):(\d{2})/', trim($t), $m)) { return null; }
+    return ((int) $m[1]) * 60 + (int) $m[2];
 }
 
 /**
@@ -1103,4 +1366,152 @@ function handle_employee_update(): void
         'employee_no' => $after['employee_no'], 'name' => $after['name'],
         'role' => (int) $after['role'], 'is_active' => (int) $after['is_active'],
     ]]);
+}
+
+/* ================================================================== */
+/*  ドラサポ連携                                                       */
+/*    ドラサポ(運行支援PWA)から、業務記録簿の着時刻を自動入力する。      */
+/*    書き込みは record.pushArrival の1行UPDATEだけに限定し、           */
+/*    record.save のようにコースを作り直すことはしない。                */
+/* ================================================================== */
+
+/** 到着時刻を分単位に切り上げる。"10:23:47"→"10:24" / "10:23:00"→"10:23"。深夜便の25:xx表記も保つ。 */
+function arrival_to_minute(string $t): ?string
+{
+    if (!preg_match('/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/', trim($t), $m)) return null;
+    $h = (int) $m[1]; $i = (int) $m[2]; $s = isset($m[3]) ? (int) $m[3] : 0;
+    if ($s > 0) { $i++; if ($i >= 60) { $i -= 60; $h++; } }   // 秒は切り上げ
+    return sprintf('%02d:%02d', $h, $i);
+}
+
+/**
+ * 業務年月日から自分の下書き(status=1)を探す。
+ * ドラサポはこれでダイヤ番号と平日/土日祝を受け取り、コース一覧へ進む。
+ */
+function handle_record_find_draft(): void
+{
+    $u    = require_auth();
+    $date = trim((string) require_param('work_date'));
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        json_err('bad_date', '業務年月日は YYYY-MM-DD で指定してください。', 422);
+    }
+
+    $st = pdo()->prepare(
+        'SELECT r.work_record_id, r.work_date, r.dia_no, r.dia_id, r.is_charter,
+                r.start_place, r.end_place, d.day_type, d.name AS dia_name
+           FROM t_work_record r
+           LEFT JOIN m_dia d ON d.dia_id = r.dia_id
+          WHERE r.employee_no = ? AND r.work_date = ? AND r.status = 1
+          ORDER BY r.work_record_id'
+    );
+    $st->execute([$u['employee_no'], $date]);
+    $recs = $st->fetchAll();
+
+    if (!$recs) {
+        json_ok(['found' => false, 'records' => [],
+                 'message' => 'この日の下書きはありませんでした。']);
+    }
+
+    // 平日/土日祝。dia_id が未設定の記録は dia_no から補う(1件に定まる時のみ)。
+    $byNo = pdo()->prepare('SELECT dia_id, day_type FROM m_dia WHERE dia_no = ? AND is_active = 1');
+    $cs   = pdo()->prepare(
+        'SELECT seq, dia_course_id, category, vehicle_no, start_place, end_place,
+                TIME_FORMAT(departure_time,\'%H:%i\') AS departure_time,
+                TIME_FORMAT(arrival_time,\'%H:%i\')   AS arrival_time,
+                arrival_source, note
+           FROM t_work_course WHERE work_record_id = ? ORDER BY seq'
+    );
+
+    $out = [];
+    foreach ($recs as $r) {
+        $dayType = $r['day_type'] !== null ? (int) $r['day_type'] : null;
+        if ($dayType === null && $r['dia_no'] !== null && $r['dia_no'] !== '') {
+            $byNo->execute([$r['dia_no']]);
+            $cand = $byNo->fetchAll();
+            if (count($cand) === 1) $dayType = (int) $cand[0]['day_type'];
+        }
+        $cs->execute([(int) $r['work_record_id']]);
+        $out[] = [
+            'work_record_id' => (int) $r['work_record_id'],
+            'work_date'      => $r['work_date'],
+            'dia_no'         => $r['dia_no'],
+            'dia_name'       => $r['dia_name'],
+            'day_type'       => $dayType,          // null = ドラサポ側で平日/土日祝を選ばせる
+            'is_charter'     => (int) $r['is_charter'],
+            'start_place'    => $r['start_place'],
+            'end_place'      => $r['end_place'],
+            'courses'        => $cs->fetchAll(),
+        ];
+    }
+    json_ok(['found' => true, 'count' => count($out), 'records' => $out]);
+}
+
+/**
+ * コース終点に着いた時刻を、業務記録簿の該当行へ書き込む。
+ * 行の特定は ①dia_course_id ②seq ③発時刻+始発地 の順。
+ * 運転者が手入力した着時刻(arrival_source=2)は、force なしでは上書きしない。
+ */
+function handle_record_push_arrival(): void
+{
+    $u  = require_auth();
+    $id = (int) require_param('work_record_id');
+
+    $raw = (string) require_param('arrival_time');
+    $arr = arrival_to_minute($raw);
+    if ($arr === null) json_err('bad_time', '到着時刻は HH:MM または HH:MM:SS で指定してください。', 422);
+
+    $dcid  = param('dia_course_id', null);
+    $seq   = param('seq', null);
+    $dep   = param('departure_time', null);
+    $start = param('start_place', null);
+    $force = (bool) param('force', false);
+
+    // 自分の記録か、まだ下書きか
+    $st = pdo()->prepare('SELECT work_record_id, status FROM t_work_record WHERE work_record_id = ? AND employee_no = ?');
+    $st->execute([$id, $u['employee_no']]);
+    $rec = $st->fetch();
+    if (!$rec) json_err('not_found', '業務記録が見つかりません。', 404);
+    if ((int) $rec['status'] !== 1) {
+        json_err('already_registered', 'この記録は登録済みです。記録簿から編集してください。', 409);
+    }
+
+    // 対象の行を探す
+    $row = null;
+    if ($dcid !== null && $dcid !== '') {
+        $q = pdo()->prepare('SELECT * FROM t_work_course WHERE work_record_id = ? AND dia_course_id = ? ORDER BY seq LIMIT 1');
+        $q->execute([$id, (int) $dcid]); $row = $q->fetch() ?: null;
+    }
+    if (!$row && $seq !== null && $seq !== '') {
+        $q = pdo()->prepare('SELECT * FROM t_work_course WHERE work_record_id = ? AND seq = ?');
+        $q->execute([$id, (int) $seq]); $row = $q->fetch() ?: null;
+    }
+    if (!$row && $dep) {   // 最後の頼み: 発時刻(+始発地)で照合
+        $sql = 'SELECT * FROM t_work_course WHERE work_record_id = ? AND departure_time = ?';
+        $arg = [$id, $dep];
+        if ($start) { $sql .= ' AND start_place = ?'; $arg[] = $start; }
+        $q = pdo()->prepare($sql . ' ORDER BY seq LIMIT 1');
+        $q->execute($arg); $row = $q->fetch() ?: null;
+    }
+    if (!$row) json_err('course_not_found', '記録簿に該当するコースが見つかりません。', 404);
+
+    // 手入力済みの着時刻は勝手に置き換えない(コピーやマスタ由来の予定値は 0 なので対象外)
+    $oldSrc = (int) ($row['arrival_source'] ?? 0);
+    $oldArr = $row['arrival_time'] !== null ? substr((string) $row['arrival_time'], 0, 5) : null;
+    if ($oldSrc === 2 && !$force && $oldArr !== $arr) {
+        json_err('confirm_needed',
+            "記録簿には手入力で {$oldArr} と入っています。{$arr} に置き換えますか？", 409);
+    }
+
+    pdo()->prepare('UPDATE t_work_course SET arrival_time = ?, arrival_source = 1 WHERE work_course_id = ?')
+         ->execute([$arr, (int) $row['work_course_id']]);
+
+    json_ok([
+        'updated'          => true,
+        'work_record_id'   => $id,
+        'seq'              => (int) $row['seq'],
+        'dia_course_id'    => $row['dia_course_id'] !== null ? (int) $row['dia_course_id'] : null,
+        'arrival_time'     => $arr,
+        'old_arrival_time' => $oldArr,
+        'was_source'       => $oldSrc,
+    ]);
 }

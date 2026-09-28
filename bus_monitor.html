@@ -76,6 +76,23 @@
   .seg button.active{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
   .big-btn{ padding:15px; border-radius:11px; border:none; background:var(--ink); color:var(--bg); font-size:16px; font-weight:700; }
   .dia-list-btn{ width:100%; padding:13px; border-radius:11px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:15px; font-weight:700; }
+  /* 業務記録簿連携 */
+  .link-btn{ width:100%; margin-bottom:12px; padding:14px; border-radius:11px; border:1px solid #2f7d54;
+             background:#123524; color:#b6f0cf; font-size:15px; font-weight:800; }
+  .link-btn.on{ background:#1b5e3a; color:#eafff2; border-color:#49b47c; }
+  .lk-panel{ width:min(94vw,420px); background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px; }
+  .lk-panel h3{ margin:0 0 14px; font-size:18px; }
+  .lk-panel label{ display:block; font-size:12px; color:var(--ink-dim); margin:10px 0 4px; }
+  .lk-panel input{ width:100%; padding:12px; font-size:17px; border-radius:9px; border:1px solid var(--line);
+                   background:var(--panel-2); color:var(--ink); }
+  .lk-row{ display:flex; gap:10px; margin-top:16px; }
+  .lk-row button{ flex:1; padding:13px; border-radius:10px; font-size:15px; font-weight:800; border:1px solid var(--line); }
+  .lk-go{ background:#1b5e3a; color:#eafff2; border-color:#49b47c !important; }
+  .lk-cancel{ background:transparent; color:var(--ink-dim); }
+  .lk-msg{ margin-top:12px; font-size:14px; min-height:1.3em; }
+  .lk-msg.err{ color:#ff8a80; }
+  .lk-msg.ok{ color:#7ee2a8; }
+  .lk-note{ margin-top:10px; font-size:12px; color:var(--ink-dim); line-height:1.6; }
   .dia-list-panel{ background:var(--panel); border:1px solid var(--line); border-radius:14px; width:100%; max-width:460px; max-height:82vh; display:flex; flex-direction:column; overflow:hidden; }
   .dl-head{ display:flex; justify-content:space-between; align-items:center; padding:13px 16px; border-bottom:1px solid var(--line); font-size:16px; font-weight:800; }
   .dl-head button{ background:none; border:none; color:var(--ink-dim); font-size:22px; padding:0 4px; }
@@ -104,6 +121,7 @@
   .rest-row{ text-align:center; font-size:18px; font-weight:800; color:#ffffff; margin:-4px 0 9px; letter-spacing:.06em; }   /* ③ 休憩(始発→到着と同サイズ・太字・白) */
   .badge{ font-size:14px; font-weight:700; padding:2px 9px; border-radius:6px; background:var(--panel-2); color:var(--ink-dim); margin-left:8px; white-space:nowrap; }
   .badge.pay{ background:var(--late-y); color:#241c00; font-weight:800; }   /* 納金は黄で強調 */
+  .badge.nodata{ background:var(--late-r); color:#fff; font-weight:800; }   /* 停留所データ未整備 */
 
   /* monitor */
   .mon{ display:block; }
@@ -273,6 +291,7 @@
   <div class="screen active" id="scSetup">
     <div class="topbar"><div class="title">🚌 しまバスドラサポ</div><div class="clock" id="clock1">--:--:--</div></div>
     <div class="form">
+      <button class="link-btn" id="linkBtn">📋 業務記録簿と連携する</button>
       <div class="field">
         <label>日付</label>
         <input type="date" id="dateInput">
@@ -378,6 +397,27 @@
   <div id="depCount"><div id="depCountNum">10</div><div class="dep-lbl">発車まで</div></div>
 
   <!-- ダイヤ一覧 -->
+  <!-- 業務記録簿連携 -->
+  <div class="overlay" id="linkOverlay">
+    <div class="lk-panel">
+      <h3>📋 業務記録簿と連携</h3>
+      <div id="lkLoginBox">
+        <label>社員番号</label>
+        <input type="text" id="lkNo" inputmode="numeric" autocomplete="username">
+        <label>パスワード</label>
+        <input type="password" id="lkPw" autocomplete="current-password">
+      </div>
+      <label>業務年月日</label>
+      <input type="date" id="lkDate">
+      <div class="lk-msg" id="lkMsg"></div>
+      <div class="lk-row">
+        <button class="lk-cancel" id="lkCancel">やめる</button>
+        <button class="lk-go" id="lkGo">記録簿を探す</button>
+      </div>
+      <div class="lk-note">記録簿の社員番号・パスワードと同じです。一度ログインすれば、次からは日付だけで使えます。</div>
+    </div>
+  </div>
+
   <div class="overlay" id="diaListOverlay">
     <div class="dia-list-panel">
       <div class="dl-head"><span id="dlTitle">ダイヤ一覧</span><button id="dlClose">✕</button></div>
@@ -418,6 +458,7 @@
 <script>
 (function(){
   // tokyoknock.com 配下なら相対(同一オリジン=CORS不要)、それ以外(GitHub Pages等)は絶対URL
+  const REST_MIN = 20;   // 次のコースまでこの分数以上あけば「休憩」と表示する
   const API_BASE = (location.origin === 'https://tokyoknock.com') ? 'api/' : 'https://tokyoknock.com/bus/api/';
   const CORRECT_SECRET = 'shimabus-fix-2026';   // ⑫ 補正APIの合言葉(update_busstops.php と一致させる)
   const CORRECT_MAX_ACC = 10;   // 補正はGPS精度±この値(m)以内のときのみ許可
@@ -487,6 +528,7 @@
 
   // ---- 日付→ダイヤ種別 ----
   function autoDayType(dstr){ if(!dstr) return 1; const d=new Date(dstr+'T00:00'); const w=d.getDay(); return (w===0||w===6)?2:1; }
+  setTimeout(flushPushQueue, 1500);   // 前回送れなかった到着時刻を送る
   function setDayType(dt){ dayType=dt; $('dtWeekday').classList.toggle('active',dt===1); $('dtHoliday').classList.toggle('active',dt===2); }
   $('dtWeekday').onclick=()=>setDayType(1);
   $('dtHoliday').onclick=()=>setDayType(2);
@@ -513,6 +555,139 @@
       show('scList');
     }catch(e){ setupMsg('通信エラー: '+e.message, true); }
   });
+  /* =================================================================
+     業務記録簿(shimabus-rdb)との連携
+       ・記録簿と同じ社員番号/パスワードでログインする(cookieが残るので初回だけ)
+       ・業務年月日から自分の下書きを探し、ダイヤ番号と平日/土日祝を受け取る
+       ・コース終点に着いたら、その時刻を記録簿の該当行へ書き込む
+       ・圏外で送れなかった分は端末に貯めておき、後でまとめて送る
+     ================================================================= */
+  let linkRec = null;          // 連携中の記録 {work_record_id, dia_no, courses[...]}
+  const PUSH_Q = 'mon_push_queue';
+
+  function apiPost(action, payload){
+    return fetch(API_BASE, {
+      method:'POST', credentials:'include', cache:'no-store',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(Object.assign({action}, payload||{}))
+    }).then(async r=>{
+      let j=null; try{ j=await r.json(); }catch(e){}
+      if(r.ok && j && j.ok) return j.data;
+      const err=new Error((j&&j.error&&j.error.message)||('HTTP '+r.status));
+      err.code=(j&&j.error&&j.error.code)||''; throw err;
+    });
+  }
+  function lkMsg(t, cls){ const m=$('lkMsg'); m.textContent=t||''; m.className='lk-msg'+(cls?' '+cls:''); }
+  function todayStr(){ const d=new Date();
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+
+  $('linkBtn').addEventListener('click', async ()=>{
+    lkMsg(''); $('lkDate').value = $('dateInput').value || todayStr();
+    $('linkOverlay').classList.add('show');
+    $('lkLoginBox').style.display='';                 // 判定できるまでは表示しておく
+    try{ const d=await apiPost('auth.me');            // 既にログイン済みなら番号入力は不要
+         if(d && d.employee){ $('lkLoginBox').style.display='none';
+           lkMsg(d.employee.name+' さんでログイン中です', 'ok'); } }catch(e){}
+  });
+  $('lkCancel').addEventListener('click', ()=> $('linkOverlay').classList.remove('show'));
+
+  $('lkGo').addEventListener('click', async ()=>{
+    const date=$('lkDate').value;
+    if(!date){ lkMsg('業務年月日を入れてください', 'err'); return; }
+    $('lkGo').disabled=true;
+    try{
+      if($('lkLoginBox').style.display !== 'none'){    // 未ログインならまずログイン
+        const no=($('lkNo').value||'').trim(), pw=$('lkPw').value||'';
+        if(!no || !pw){ lkMsg('社員番号とパスワードを入れてください', 'err'); $('lkGo').disabled=false; return; }
+        lkMsg('ログインしています…');
+        await apiPost('auth.login', {employee_no:no, password:pw});
+        $('lkPw').value='';
+      }
+      lkMsg('記録簿を探しています…');
+      const d=await apiPost('record.findDraft', {work_date:date});
+      if(!d.found || !d.records.length){                       // 記録簿が無い → 従来どおりの選び方へ
+        $('linkOverlay').classList.remove('show');
+        setupMsg('記録簿無し（この日の下書きはありません）。ダイヤ番号を入力してください', true);
+        linkRec=null; updateLinkBtn();
+        $('lkGo').disabled=false; return;
+      }
+      const rec = d.records.length===1 ? d.records[0] : await pickRecord(d.records);
+      if(!rec){ $('lkGo').disabled=false; return; }
+      await applyLinkedRecord(rec, date);
+    }catch(e){
+      lkMsg(e.code==='login_failed' ? '社員番号またはパスワードが違います' : e.message, 'err');
+      if(e.code==='unauthorized'){ $('lkLoginBox').style.display=''; }
+    }
+    $('lkGo').disabled=false;
+  });
+
+  /* 同じ日に下書きが複数ある時に選ばせる */
+  function pickRecord(recs){
+    const lines=recs.map((r,i)=>`${i+1}. ダイヤ ${zdia(r.dia_no)}　${r.start_place||'—'} → ${r.end_place||'—'}`).join('\n');
+    const a=prompt('この日の記録簿が複数あります。番号を入れてください。\n\n'+lines, '1');
+    const i=parseInt(a,10); return (i>=1 && i<=recs.length) ? recs[i-1] : null;
+  }
+
+  /* 記録簿の内容をドラサポに反映して、コース一覧へ進む */
+  async function applyLinkedRecord(rec, date){
+    linkRec = rec;
+    $('dateInput').value = date;
+    if(rec.day_type===1 || rec.day_type===2) setDayType(rec.day_type);
+    else setDayType(autoDayType(date));
+    if(!rec.dia_no){ lkMsg('この記録簿にはダイヤ番号がありません（貸切など）', 'err'); linkRec=null; return; }
+    $('diaInput').value = String(parseInt(rec.dia_no,10));
+    $('linkOverlay').classList.remove('show');
+    updateLinkBtn();
+    $('loadCoursesBtn').click();      // 既存の取得処理をそのまま使う
+    toast(`記録簿と連携しました（ダイヤ ${zdia(rec.dia_no)}）`);
+  }
+
+  function updateLinkBtn(){
+    const b=$('linkBtn'); if(!b) return;
+    if(linkRec){ b.classList.add('on'); b.textContent=`📋 記録簿と連携中（ダイヤ ${zdia(linkRec.dia_no)}）`; }
+    else { b.classList.remove('on'); b.textContent='📋 業務記録簿と連携する'; }
+  }
+
+  /* ---- 到着時刻の送信（圏外はためて後で送る） ---- */
+  function queueGet(){ try{ return JSON.parse(lsGet(PUSH_Q)||'[]'); }catch(e){ return []; } }
+  function queueSet(a){ lsSet(PUSH_Q, JSON.stringify(a)); }
+
+  async function pushArrival(c, when){
+    if(!linkRec || !c) return;
+    const hhmmss = String(when.getHours()).padStart(2,'0')+':'+String(when.getMinutes()).padStart(2,'0')
+                 + ':' + String(when.getSeconds()).padStart(2,'0');
+    const item = { work_record_id: linkRec.work_record_id, dia_course_id: c.dia_course_id,
+                   seq: c.seq, departure_time: c.departure_time || null,
+                   start_place: c.start_place || null, arrival_time: hhmmss };
+    const q=queueGet(); q.push(item); queueSet(q);   // 先に貯めてから送る(送信中に落ちても消えない)
+    flushPushQueue();
+  }
+
+  async function flushPushQueue(){
+    let q=queueGet(); if(!q.length) return;
+    const rest=[]; let sent=0;
+    for(const item of q){
+      try{
+        const d=await apiPost('record.pushArrival', item);
+        sent++;
+        toast(`記録簿に到着 ${d.arrival_time} を記録しました`);
+      }catch(e){
+        if(e.code==='confirm_needed'){                       // 手入力済み → 運転者に聞く
+          if(confirm(e.message)){ rest.push(Object.assign({force:true}, item)); }
+          continue;                                          // 「いいえ」なら捨てる
+        }
+        if(e.code==='already_registered' || e.code==='course_not_found' || e.code==='not_found'){
+          toast('記録簿に書けませんでした: '+e.message); continue;   // 送り直しても直らないものは捨てる
+        }
+        rest.push(item);                                     // 圏外・混雑 → 次の機会に
+      }
+    }
+    queueSet(rest);
+    if(rest.length && sent===0) toast('記録簿へ未送信 '+rest.length+' 件（電波が戻ると送ります）');
+    if(rest.some(x=>x.force)) setTimeout(flushPushQueue, 500);
+  }
+  window.addEventListener('online', flushPushQueue);
+
   function setupMsg(t,err){ const m=$('setupMsg'); m.textContent=t; m.classList.toggle('err',!!err); }
 
   // ---- ダイヤ一覧(選択中の平日/土日祝) ----
@@ -547,21 +722,23 @@
     const catName={1:'点検',2:'回送',3:'実車',4:'—',5:'清掃'};
     courses.forEach((c,idx)=>{
       const btn=document.createElement('button'); btn.className='course';
-      const selectable = c.category===3;
+      const noStops = (c.category===3 && !c.arrival_time);   // 着時刻が無い = 停留所データ未整備
+      const selectable = c.category===3 && !noStops;
       btn.disabled=!selectable;
       btn.innerHTML =
         `<div class="seqn">${c.seq}</div>`+
         `<div class="body"><div class="route">${c.start_place||'—'} → ${c.end_place||'—'}`+
           (c.category!==3?`<span class="badge">${catName[c.category]||c.category}</span>`:'')+
+          (noStops?`<span class="badge nodata">停留所データ未整備</span>`:'')+
           (c.settlement_flag?`<span class="badge pay">納金</span>`:'')+`</div></div>`+
         `<div class="time">${c.departure_time||''}</div>`;
       if(selectable) btn.addEventListener('click', ()=> selectCourse(c));
       wrap.appendChild(btn);
-      // ③ 次コースとの間が30分以上なら「休憩」を細く表示(到着定刻→次の発車定刻)
+      // ③ 次コースとの間が20分以上なら「休憩」を細く表示(到着定刻→次の発車定刻)
       const nx=courses[idx+1];
       if(nx && c.arrival_time && nx.departure_time){
         const a=toMin(c.arrival_time), dp=toMin(nx.departure_time);
-        if(a!=null && dp!=null && dp-a>=30){ const r=document.createElement('div'); r.className='rest-row'; r.textContent=`― 休憩 ${dp-a}分 ―`; wrap.appendChild(r); }
+        if(a!=null && dp!=null && dp-a>=REST_MIN){ const r=document.createElement('div'); r.className='rest-row'; r.textContent=`― 休憩 ${dp-a}分 ―`; wrap.appendChild(r); }
       }
     });
   }
@@ -758,7 +935,9 @@
       diff.classList.add('ok'); diff.textContent='🏁';
       $('caption').textContent='終点に到着しました。お疲れさまでした';
       setTargetName(dispName(st.stop)); setEta(hhmm(st.stop)); $('nextPrev').textContent='';
-      if(!terminalAnnounced){ speak('終点に到着しました。お疲れさまでした'); terminalAnnounced=true; stopRun(); showFinishFx(st.stop); }   // 終点でGPS停止+補正保存+全画面演出
+      if(!terminalAnnounced){ speak('終点に到着しました。お疲れさまでした'); terminalAnnounced=true; stopRun(); showFinishFx(st.stop);
+        pushArrival(course, new Date());   // 業務記録簿の着時刻へ(連携中のみ)
+      }   // 終点でGPS停止+補正保存+全画面演出
       updateRail(); return;
     }
     if(st.state==='finished'){
@@ -875,9 +1054,9 @@
     const nx=(idx>=0) ? list[idx+1] : null;
     if(nx){
       const t=(nx.departure_time||'').replace(/^0/,'');   // 07:30 → 7:30
-      // ② 今のコースの到着定刻と次の発車定刻の差が30分以上なら休憩を知らせる
+      // ② 今のコースの到着定刻と次の発車定刻の差が20分以上なら休憩を知らせる
       const a=toMin(course && course.arrival_time), dp=toMin(nx.departure_time);
-      const rest=(a!=null && dp!=null && dp-a>=30) ? (dp-a) : 0;
+      const rest=(a!=null && dp!=null && dp-a>=REST_MIN) ? (dp-a) : 0;
       el.className='show tap';
       el.innerHTML=(rest?`<div class="nc-rest">☕ ${rest}分 休憩が入ります</div>`:`<div class="nc-lbl">次のコース</div>`)+
         `<div class="nc-main">${nx.start_place||'—'} 始発　<span class="nc-time">${t||'--:--'}</span></div>`+

@@ -405,15 +405,30 @@
     try{
       log('カバー状況を調べています…');
       const d=await call({action:'shimabus.coverage', day_type:+$('dayType').value});
-      lastSuggest=(d.suggest_origins||[]).filter(x=>x.origin);
-      const rows=lastSuggest.map(s=>`<tr><td>${esc(s.name)}${s.via?' <span class="note">(経由停で代用)</span>':''}</td><td class="num">${esc(s.origin)}</td><td class="num">${s.courses}</td><td>${esc((s.sample||[]).join(', '))}</td></tr>`).join('');
+      const all=d.suggest_origins||[];
+      lastSuggest=all.filter(x=>x.origin);          // 自動取込に使えるのは起点IDが分かるものだけ
+      const unknown=all.filter(x=>!x.origin);
+      const noStops=d.no_stops||0;
+      const viaNote=s=> s.via==='stop' ? ' <span class="note">(経由停で代用)</span>'
+                     : s.via==='name' ? ' <span class="note">(名前から推定・要確認)</span>' : '';
+      const rows=
+        lastSuggest.map(s=>`<tr><td>${esc(s.name)}${viaNote(s)}</td><td class="num">${esc(s.origin)}</td><td class="num">${s.courses}</td><td>${esc((s.sample||[]).join(', '))}</td></tr>`).join('')+
+        unknown.map(s=>`<tr><td>${esc(s.name)} <span class="tag off">起点不明</span></td><td class="num">—</td><td class="num">${s.courses}</td><td>${esc((s.sample||[]).join(', '))}</td></tr>`).join('');
+      const listed=all.reduce((n,s)=>n+s.courses,0);
+      const needImport=(d.no_trip||0)+(d.no_fare||0);
       $('coverage').innerHTML=
-        `<table><tr><th>コース総数</th><th>揃っている</th><th>便が無い</th><th>運賃が無い</th></tr>`+
-        `<tr><td class="num">${d.courses_total}</td><td class="num">${d.ok}</td><td class="num">${d.no_trip}</td><td class="num">${d.no_fare}</td></tr></table>`+
-        (rows?`<table style="margin-top:14px"><tr><th>取り込むべき起点</th><th>起点ID</th><th>不足コース</th><th>例</th></tr>${rows}</table>`
-             :'<div class="msg ok">不足はありません。</div>');
-      log(`コース ${d.courses_total} 件中 ${d.ok} 件が揃っています（便なし ${d.no_trip} / 運賃なし ${d.no_fare}）`, d.ok===d.courses_total?'ok':'warn');
+        `<table><tr><th>コース総数</th><th>揃っている</th><th>便が無い</th><th>運賃が無い</th><th>停留所データが無い</th></tr>`+
+        `<tr><td class="num">${d.courses_total}</td><td class="num">${d.ok}</td><td class="num">${d.no_trip}</td><td class="num">${d.no_fare}</td><td class="num">${noStops}</td></tr></table>`+
+        `<div class="note">「揃っている」は、便・運賃・停留所データが全部そろってドラサポで走れるコースです。</div>`+
+        (rows?`<table style="margin-top:14px"><tr><th>取り込むべき起点</th><th>起点ID</th><th>不足コース</th><th>例</th></tr>${rows}</table>`+
+              `<div class="note">表の合計 ${listed} コース ／ 取込が必要 ${needImport} コース</div>`
+             :(needImport?'':'<div class="msg ok">取込が必要なコースはありません。</div>'))+
+        (unknown.length?`<div class="msg err">起点不明のコースが ${d.unknown_origin_courses} 件あります。しまバス側の起点IDが分からないため自動では取り込めません。起点IDが分かれば「起点」欄に入力して取り込んでください。</div>`:'')+
+        (noStops?`<div class="msg err">便と運賃はあるのに停留所データが無いコースが ${noStops} 件あります（例: ${esc((d.need_fill&&d.need_fill.sample||[]).join(', '))}）。取込では直りません。phpMyAdmin で fill_dia_course_stop.sql を実行してください。</div>`:'');
+      log(`コース ${d.courses_total} 件中 ${d.ok} 件が揃っています（便なし ${d.no_trip} / 運賃なし ${d.no_fare} / 停留所データなし ${noStops}）`, d.ok===d.courses_total?'ok':'warn');
       if(lastSuggest.length) log(`必要な起点: ${lastSuggest.map(s=>s.origin+'('+s.name+')').join(', ')}`);
+      if(unknown.length) log(`起点不明: ${unknown.map(s=>s.name+' '+s.courses+'件').join(', ')}`,'warn');
+      if(noStops) log(`停留所データの補完が必要: ${noStops} 件 → fill_dia_course_stop.sql を実行`,'warn');
     }catch(e){ log('調査に失敗: '+e.message,'err'); }
     $('btnCheck').disabled=false;
   });

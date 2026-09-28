@@ -34,9 +34,12 @@ $mysqli->set_charset($db['charset'] ?? 'utf8mb4');
 
 // 1) コースの始発停・発時刻
 $q = $mysqli->prepare(
-  "SELECT c.start_busstop_id, TIME_FORMAT(c.departure_time,'%H:%i:%s') AS dep,
-          COALESCE(c.start_name, s.name) AS start_name
-   FROM m_dia_course c LEFT JOIN m_busstop s ON s.busstop_id = c.start_busstop_id
+  "SELECT c.start_busstop_id, c.end_busstop_id, TIME_FORMAT(c.departure_time,'%H:%i:%s') AS dep,
+          COALESCE(c.start_name, s.name) AS start_name,
+          COALESCE(c.end_name,   e.name) AS end_name
+   FROM m_dia_course c
+   LEFT JOIN m_busstop s ON s.busstop_id = c.start_busstop_id
+   LEFT JOIN m_busstop e ON e.busstop_id = c.end_busstop_id
    WHERE c.dia_course_id = ?");
 $q->bind_param('i', $dia_course_id); $q->execute();
 $course = $q->get_result()->fetch_assoc(); $q->close();
@@ -48,27 +51,57 @@ $dep      = $course['dep'];
 //    ① 便の始発停+発時刻が一致（コースが便の始発から始まる場合）
 //    ② その停をその時刻に通る便（コースが便の途中から始まる場合。運転士の交代など）
 //    ③ 始発停だけで最新便（最後の手段）
-$tripId = 0;
-$t1 = $mysqli->prepare("SELECT src_trip_id FROM src_trip WHERE origin_busstop_id = ? AND first_departure = ? ORDER BY target_date DESC LIMIT 1");
+$endId = isset($course['end_busstop_id']) ? (int)$course['end_busstop_id'] : 0;
+$cands = [];   // 候補を①②③の順に集める(先に見つかったものを優先)
+
+$t1 = $mysqli->prepare("SELECT src_trip_id FROM src_trip WHERE origin_busstop_id = ? AND first_departure = ? ORDER BY target_date DESC LIMIT 3");
 if ($t1) { $t1->bind_param('is', $originId, $dep); $t1->execute();
-           if ($r = $t1->get_result()->fetch_assoc()) $tripId = (int)$r['src_trip_id']; $t1->close(); }
-if (!$tripId) {
-    $tm = $mysqli->prepare(
-      "SELECT ts.src_trip_id
-         FROM src_trip_stop ts JOIN src_trip t ON t.src_trip_id = ts.src_trip_id
-        WHERE ts.busstop_id = ? AND (ts.departure_time = ? OR ts.arrival_time = ?)
-        ORDER BY t.target_date DESC LIMIT 1");
-    if ($tm) { $tm->bind_param('iss', $originId, $dep, $dep); $tm->execute();
-               if ($r = $tm->get_result()->fetch_assoc()) $tripId = (int)$r['src_trip_id']; $tm->close(); }
+           $r = $t1->get_result(); while ($x = $r->fetch_assoc()) $cands[] = (int)$x['src_trip_id']; $t1->close(); }
+
+$tm = $mysqli->prepare(
+  "SELECT ts.src_trip_id
+     FROM src_trip_stop ts JOIN src_trip t ON t.src_trip_id = ts.src_trip_id
+    WHERE ts.busstop_id = ? AND (ts.departure_time = ? OR ts.arrival_time = ?)
+    ORDER BY t.target_date DESC LIMIT 3");
+if ($tm) { $tm->bind_param('iss', $originId, $dep, $dep); $tm->execute();
+           $r = $tm->get_result(); while ($x = $r->fetch_assoc()) $cands[] = (int)$x['src_trip_id']; $tm->close(); }
+
+$t2 = $mysqli->prepare("SELECT src_trip_id FROM src_trip WHERE origin_busstop_id = ? ORDER BY target_date DESC LIMIT 3");
+if ($t2) { $t2->bind_param('i', $originId); $t2->execute();
+           $r = $t2->get_result(); while ($x = $r->fetch_assoc()) $cands[] = (int)$x['src_trip_id']; $t2->close(); }
+
+$cands = array_values(array_unique(array_filter($cands)));
+
+// コースの着停を通らない便は採用しない。
+// (通らない便の運賃を出すと、別路線の金額を運転手に見せてしまう)
+//   標柱ID(上り/下り)が食い違うことがあるので、名称でも照合する。
+//   紙の表示名(奥又)としまバスの正式名(平田町奥又)が違うため、部分一致も許す。
+$endName = trim((string)($course['end_name'] ?? ''));
+$tripId = 0; $rejected = 0;
+$chk = ($endId || $endName !== '')
+    ? $mysqli->prepare(
+        "SELECT 1 FROM src_trip_stop ts
+           JOIN m_busstop b ON b.busstop_id = ts.busstop_id
+          WHERE ts.src_trip_id = ?
+            AND ( ts.busstop_id = ?
+                  OR (? <> '' AND (b.name LIKE CONCAT('%', ?, '%') OR ? LIKE CONCAT('%', b.name, '%'))) )
+          LIMIT 1")
+    : null;
+foreach ($cands as $cid) {
+    if (!$chk) { $tripId = $cid; break; }            // 着停が分からないコースは検証できない
+    $chk->bind_param('iisss', $cid, $endId, $endName, $endName, $endName);
+    $chk->execute();
+    if ($chk->get_result()->fetch_row()) { $tripId = $cid; break; }
+    $rejected++;
 }
+if ($chk) $chk->close();
+
 if (!$tripId) {
-    $t2 = $mysqli->prepare("SELECT src_trip_id FROM src_trip WHERE origin_busstop_id = ? ORDER BY target_date DESC LIMIT 1");
-    if ($t2) { $t2->bind_param('i', $originId); $t2->execute();
-               if ($r = $t2->get_result()->fetch_assoc()) $tripId = (int)$r['src_trip_id']; $t2->close(); }
-}
-if (!$tripId) {
-    echo json_encode(['dia_course_id'=>$dia_course_id, 'count'=>0, 'fares'=>[],
-                      'note'=>'この便の運賃データが見つかりませんでした'], JSON_UNESCAPED_UNICODE);
+    $note = $rejected
+        ? 'この区間に一致する便が見つかりませんでした(終着「' . ($course['end_name'] ?? '') . '」を通る便が未取込です)'
+        : 'この便の運賃データが見つかりませんでした';
+    echo json_encode(['dia_course_id'=>$dia_course_id, 'count'=>0, 'fares'=>[], 'stops'=>[], 'matrix'=>new stdClass(),
+                      'note'=>$note], JSON_UNESCAPED_UNICODE);
     $mysqli->close(); exit;
 }
 
