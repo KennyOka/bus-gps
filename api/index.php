@@ -58,9 +58,6 @@ try {
         case 'record.export':    handle_record_export();    break; // 月次CSV用の明細行
         case 'record.get':       handle_record_get();       break;
         case 'record.save':      handle_record_save();      break;
-        // ---- ドラサポ連携 ----
-        case 'record.findDraft':   handle_record_find_draft();   break; // 業務年月日から下書きを探す
-        case 'record.pushArrival': handle_record_push_arrival(); break; // 終点到着時刻を書き込む // 下書き保存(upsert)
         case 'record.register':  handle_record_register();  break; // 入力完了(走行キロ計算+登録済)
         case 'record.delete':    handle_record_delete();    break;
 
@@ -788,6 +785,28 @@ function handle_record_save(): void
         json_err('bad_courses', 'courses は配列で指定してください。', 422);
     }
 
+    // 直筆サインは PNG の data URL だけを受け付ける（別の形式や巨大なデータでDBを汚さないため）。
+    // 空文字は「サインを消した」とみなして NULL にする。
+    if (array_key_exists('sign_image', $b)) {
+        $img = (string) ($b['sign_image'] ?? '');
+        if ($img === '') {
+            $b['sign_image'] = null;
+        } elseif (strlen($img) > 400000
+               || !preg_match('#^data:image/png;base64,[A-Za-z0-9+/=]+$#', $img)) {
+            json_err('bad_sign', 'サイン画像の形式が正しくありません。書き直してください。', 422);
+        }
+    }
+    if (array_key_exists('sign_at', $b)) {
+        $at = (string) ($b['sign_at'] ?? '');
+        $b['sign_at'] = preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/', $at) ? $at : null;
+    }
+    foreach (['work_report' => 100, 'sign_name' => 50] as $k => $max) {
+        if (array_key_exists($k, $b)) {
+            $v = trim((string) ($b[$k] ?? ''));
+            $b[$k] = $v === '' ? null : mb_substr($v, 0, $max);
+        }
+    }
+
     $fields = record_writable_fields();
     $db     = pdo();
     $db->beginTransaction();
@@ -851,51 +870,23 @@ function handle_record_save(): void
         }
 
         // コースは全消し→再挿入（順番=送信順で再採番）
-        // 既存行を退避しておく。ドラサポが記録した着時刻(arrival_source=1)を、
-        // 古い画面からの保存で消してしまわないようにするため。
-        $prevById = []; $prevBySeq = [];
-        $pv = $db->prepare('SELECT seq, dia_course_id, arrival_time, arrival_source FROM t_work_course WHERE work_record_id = ?');
-        $pv->execute([$id]);
-        foreach ($pv->fetchAll() as $p) {
-            $prevBySeq[(int) $p['seq']] = $p;
-            if ($p['dia_course_id'] !== null) $prevById[(int) $p['dia_course_id']] = $p;
-        }
-
         $db->prepare('DELETE FROM t_work_course WHERE work_record_id = ?')->execute([$id]);
         $ins = $db->prepare(
             'INSERT INTO t_work_course
-                (work_record_id, seq, dia_course_id, category, vehicle_no, start_place, end_place,
-                 departure_time, arrival_time, arrival_source, note)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+                (work_record_id, seq, category, vehicle_no, start_place, end_place, departure_time, arrival_time, note)
+             VALUES (?,?,?,?,?,?,?,?,?)'
         );
         $seq = 1;
         foreach ($courses as $c) {
-            $cseq = (int) ($c['seq'] ?? $seq);
-            $dcid = isset($c['dia_course_id']) && $c['dia_course_id'] !== '' ? (int) $c['dia_course_id'] : null;
-
-            // 同じコースの保存済みデータを探す(ダイヤコースID優先、無ければ並び順)
-            $prev = ($dcid !== null && isset($prevById[$dcid])) ? $prevById[$dcid]
-                  : ($prevBySeq[$cseq] ?? null);
-            if ($dcid === null && $prev && $prev['dia_course_id'] !== null) $dcid = (int) $prev['dia_course_id'];
-
-            $arr = $c['arrival_time'] ?? null;
-            $src = array_key_exists('arrival_source', $c) ? (int) $c['arrival_source'] : null;
-
-            // 保存済みがドラサポの実績(1)で、運転者が手入力(2)で上書きしたわけでないなら、実績を守る
-            if ($prev && (int) $prev['arrival_source'] === 1 && $src !== 2) {
-                $arr = $prev['arrival_time'];
-                $src = 1;
-            }
-            if ($src === null) $src = $prev ? (int) $prev['arrival_source'] : 0;
-
             $ins->execute([
-                $id, $cseq, $dcid,
+                $id,
+                (int) ($c['seq'] ?? $seq),
                 $c['category']       ?? null,
                 $c['vehicle_no']     ?? null,
                 $c['start_place']    ?? null,
                 $c['end_place']      ?? null,
                 $c['departure_time'] ?? null,
-                $arr, $src,
+                $c['arrival_time']   ?? null,
                 $c['note']           ?? null,
             ]);
             $seq++;
@@ -1293,6 +1284,7 @@ function record_writable_fields(): array
         'contact', 'status',
         'dest', 'memo',            // 方面 / メモ（旧しまバス乗務履歴管理からの移行項目）
         'work_type',               // 運行種別: 路線/貸切/研修/出張/その他
+        'work_report', 'sign_image', 'sign_name', 'sign_at',   // 作業報告と直筆サイン(区分4の作業先)
     ];
 }
 
@@ -1368,150 +1360,3 @@ function handle_employee_update(): void
     ]]);
 }
 
-/* ================================================================== */
-/*  ドラサポ連携                                                       */
-/*    ドラサポ(運行支援PWA)から、業務記録簿の着時刻を自動入力する。      */
-/*    書き込みは record.pushArrival の1行UPDATEだけに限定し、           */
-/*    record.save のようにコースを作り直すことはしない。                */
-/* ================================================================== */
-
-/** 到着時刻を分単位に切り上げる。"10:23:47"→"10:24" / "10:23:00"→"10:23"。深夜便の25:xx表記も保つ。 */
-function arrival_to_minute(string $t): ?string
-{
-    if (!preg_match('/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/', trim($t), $m)) return null;
-    $h = (int) $m[1]; $i = (int) $m[2]; $s = isset($m[3]) ? (int) $m[3] : 0;
-    if ($s > 0) { $i++; if ($i >= 60) { $i -= 60; $h++; } }   // 秒は切り上げ
-    return sprintf('%02d:%02d', $h, $i);
-}
-
-/**
- * 業務年月日から自分の下書き(status=1)を探す。
- * ドラサポはこれでダイヤ番号と平日/土日祝を受け取り、コース一覧へ進む。
- */
-function handle_record_find_draft(): void
-{
-    $u    = require_auth();
-    $date = trim((string) require_param('work_date'));
-    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
-        json_err('bad_date', '業務年月日は YYYY-MM-DD で指定してください。', 422);
-    }
-
-    $st = pdo()->prepare(
-        'SELECT r.work_record_id, r.work_date, r.dia_no, r.dia_id, r.is_charter,
-                r.start_place, r.end_place, d.day_type, d.name AS dia_name
-           FROM t_work_record r
-           LEFT JOIN m_dia d ON d.dia_id = r.dia_id
-          WHERE r.employee_no = ? AND r.work_date = ? AND r.status = 1
-          ORDER BY r.work_record_id'
-    );
-    $st->execute([$u['employee_no'], $date]);
-    $recs = $st->fetchAll();
-
-    if (!$recs) {
-        json_ok(['found' => false, 'records' => [],
-                 'message' => 'この日の下書きはありませんでした。']);
-    }
-
-    // 平日/土日祝。dia_id が未設定の記録は dia_no から補う(1件に定まる時のみ)。
-    $byNo = pdo()->prepare('SELECT dia_id, day_type FROM m_dia WHERE dia_no = ? AND is_active = 1');
-    $cs   = pdo()->prepare(
-        'SELECT seq, dia_course_id, category, vehicle_no, start_place, end_place,
-                TIME_FORMAT(departure_time,\'%H:%i\') AS departure_time,
-                TIME_FORMAT(arrival_time,\'%H:%i\')   AS arrival_time,
-                arrival_source, note
-           FROM t_work_course WHERE work_record_id = ? ORDER BY seq'
-    );
-
-    $out = [];
-    foreach ($recs as $r) {
-        $dayType = $r['day_type'] !== null ? (int) $r['day_type'] : null;
-        if ($dayType === null && $r['dia_no'] !== null && $r['dia_no'] !== '') {
-            $byNo->execute([$r['dia_no']]);
-            $cand = $byNo->fetchAll();
-            if (count($cand) === 1) $dayType = (int) $cand[0]['day_type'];
-        }
-        $cs->execute([(int) $r['work_record_id']]);
-        $out[] = [
-            'work_record_id' => (int) $r['work_record_id'],
-            'work_date'      => $r['work_date'],
-            'dia_no'         => $r['dia_no'],
-            'dia_name'       => $r['dia_name'],
-            'day_type'       => $dayType,          // null = ドラサポ側で平日/土日祝を選ばせる
-            'is_charter'     => (int) $r['is_charter'],
-            'start_place'    => $r['start_place'],
-            'end_place'      => $r['end_place'],
-            'courses'        => $cs->fetchAll(),
-        ];
-    }
-    json_ok(['found' => true, 'count' => count($out), 'records' => $out]);
-}
-
-/**
- * コース終点に着いた時刻を、業務記録簿の該当行へ書き込む。
- * 行の特定は ①dia_course_id ②seq ③発時刻+始発地 の順。
- * 運転者が手入力した着時刻(arrival_source=2)は、force なしでは上書きしない。
- */
-function handle_record_push_arrival(): void
-{
-    $u  = require_auth();
-    $id = (int) require_param('work_record_id');
-
-    $raw = (string) require_param('arrival_time');
-    $arr = arrival_to_minute($raw);
-    if ($arr === null) json_err('bad_time', '到着時刻は HH:MM または HH:MM:SS で指定してください。', 422);
-
-    $dcid  = param('dia_course_id', null);
-    $seq   = param('seq', null);
-    $dep   = param('departure_time', null);
-    $start = param('start_place', null);
-    $force = (bool) param('force', false);
-
-    // 自分の記録か、まだ下書きか
-    $st = pdo()->prepare('SELECT work_record_id, status FROM t_work_record WHERE work_record_id = ? AND employee_no = ?');
-    $st->execute([$id, $u['employee_no']]);
-    $rec = $st->fetch();
-    if (!$rec) json_err('not_found', '業務記録が見つかりません。', 404);
-    if ((int) $rec['status'] !== 1) {
-        json_err('already_registered', 'この記録は登録済みです。記録簿から編集してください。', 409);
-    }
-
-    // 対象の行を探す
-    $row = null;
-    if ($dcid !== null && $dcid !== '') {
-        $q = pdo()->prepare('SELECT * FROM t_work_course WHERE work_record_id = ? AND dia_course_id = ? ORDER BY seq LIMIT 1');
-        $q->execute([$id, (int) $dcid]); $row = $q->fetch() ?: null;
-    }
-    if (!$row && $seq !== null && $seq !== '') {
-        $q = pdo()->prepare('SELECT * FROM t_work_course WHERE work_record_id = ? AND seq = ?');
-        $q->execute([$id, (int) $seq]); $row = $q->fetch() ?: null;
-    }
-    if (!$row && $dep) {   // 最後の頼み: 発時刻(+始発地)で照合
-        $sql = 'SELECT * FROM t_work_course WHERE work_record_id = ? AND departure_time = ?';
-        $arg = [$id, $dep];
-        if ($start) { $sql .= ' AND start_place = ?'; $arg[] = $start; }
-        $q = pdo()->prepare($sql . ' ORDER BY seq LIMIT 1');
-        $q->execute($arg); $row = $q->fetch() ?: null;
-    }
-    if (!$row) json_err('course_not_found', '記録簿に該当するコースが見つかりません。', 404);
-
-    // 手入力済みの着時刻は勝手に置き換えない(コピーやマスタ由来の予定値は 0 なので対象外)
-    $oldSrc = (int) ($row['arrival_source'] ?? 0);
-    $oldArr = $row['arrival_time'] !== null ? substr((string) $row['arrival_time'], 0, 5) : null;
-    if ($oldSrc === 2 && !$force && $oldArr !== $arr) {
-        json_err('confirm_needed',
-            "記録簿には手入力で {$oldArr} と入っています。{$arr} に置き換えますか？", 409);
-    }
-
-    pdo()->prepare('UPDATE t_work_course SET arrival_time = ?, arrival_source = 1 WHERE work_course_id = ?')
-         ->execute([$arr, (int) $row['work_course_id']]);
-
-    json_ok([
-        'updated'          => true,
-        'work_record_id'   => $id,
-        'seq'              => (int) $row['seq'],
-        'dia_course_id'    => $row['dia_course_id'] !== null ? (int) $row['dia_course_id'] : null,
-        'arrival_time'     => $arr,
-        'old_arrival_time' => $oldArr,
-        'was_source'       => $oldSrc,
-    ]);
-}
