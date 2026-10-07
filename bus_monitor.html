@@ -75,6 +75,13 @@
   .seg button{ flex:1; padding:12px; border-radius:9px; border:1px solid var(--line); background:var(--panel); color:var(--ink-dim); font-size:14px; font-weight:600; }
   .seg button.active{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
   .big-btn{ padding:15px; border-radius:11px; border:none; background:var(--ink); color:var(--bg); font-size:16px; font-weight:700; }
+  /* デモ操作バー */
+  .demo-clock{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:30px; font-weight:800; letter-spacing:1px; }
+  .demo-diff{ margin-left:auto; font-size:15px; font-weight:700; color:var(--ink-dim); }
+  .demo-diff.early{ color:var(--early); } .demo-diff.late{ color:var(--late-y); }
+  .spd{ min-width:46px; padding:9px 0; border-radius:9px; border:1px solid var(--line);
+        background:var(--panel-2); color:var(--ink); font-size:15px; font-weight:800; }
+  .spd.on{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
   .dia-list-btn{ width:100%; padding:13px; border-radius:11px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:15px; font-weight:700; }
   .dia-list-panel{ background:var(--panel); border:1px solid var(--line); border-radius:14px; width:100%; max-width:460px; max-height:82vh; display:flex; flex-direction:column; overflow:hidden; }
   .dl-head{ display:flex; justify-content:space-between; align-items:center; padding:13px 16px; border-bottom:1px solid var(--line); font-size:16px; font-weight:800; }
@@ -279,6 +286,13 @@
         <input type="date" id="dateInput">
       </div>
       <div class="field">
+        <label>動作モード</label>
+        <div class="seg">
+          <button id="mdGps" class="active">実GPS</button>
+          <button id="mdDemo">デモ</button>
+        </div>
+      </div>
+      <div class="field">
         <label>ダイヤ種別(日付から自動判定・祝日は手動で切替)</label>
         <div class="seg">
           <button id="dtWeekday" class="active">平日</button>
@@ -295,7 +309,7 @@
       </div>
       <div class="msg" id="setupMsg"></div>
       <button class="close-btn" id="closeAppBtn">✖ アプリを閉じる</button>
-      <a class="manual-link" href="./manual.html" target="_blank" rel="noopener">📖 使い方ガイドを見る</a>
+      <a class="manual-link" id="manualLink" href="./manual.html" target="_blank" rel="noopener">📖 使い方ガイドを見る</a>
     </div>
   </div>
 
@@ -338,26 +352,30 @@
         <button id="nextBtn">次停▶</button>
       </div>
       <div class="controls secondary">
-        <button id="modeBtn">デモ</button>
+        <button id="langBtn">EN</button>
         <select id="radius" class="radius-sel"></select>
         <button id="volBtn">🔊大</button>
         <button id="nameBtn">🗣停名</button>
         <button id="correctBtn">📍補正</button>
       </div>
-      <div class="sim" id="simRow" style="display:none;">
+      <div class="sim" id="demoRow" style="display:none;">
         <div class="sim-line">
-          <button class="live-btn" id="liveBtn">▶ ライブ運行</button>
-          <select id="liveSpeed" class="radius-sel">
-            <option value="1">実時間</option>
-            <option value="60" selected>×60</option>
-            <option value="180">×180</option>
+          <span class="demo-clock" id="demoClock">--:--:--</span>
+          <span class="demo-diff" id="demoDiff">定刻 --:--</span>
+        </div>
+        <div class="sim-line">
+          <span class="sl">速度</span>
+          <button class="spd" data-kmh="30">30</button>
+          <button class="spd on" data-kmh="40">40</button>
+          <button class="spd" data-kmh="50">50</button>
+          <span class="sl">km/h</span>
+          <button class="live-btn" id="demoHoldBtn">⏸ 停車</button>
+          <select id="demoAccel" class="radius-sel">
+            <option value="1" selected>実時間</option>
+            <option value="10">×10</option>
+            <option value="60">×60</option>
           </select>
         </div>
-        <div class="sim-line">
-          <span class="sl">対象停</span>
-          <input type="range" id="simStop" min="0" max="0" value="0">
-        </div>
-        <button class="sim-off-btn" id="simOff">早発-30s（タップで切替）</button>
       </div>
     </div>
   </div>
@@ -442,7 +460,6 @@
   const FIX_QUIET_MS=60000;               //    開始から60秒は抑止
   let watchId = null;
   let mode = 'gps';       // 'gps' | 'demo'
-  let simOffset = -30;    // デモ時の秒オフセット(-30早発/+15遅れ 等)
   let lastLat=null, lastLng=null;
   let audioPrimed=false, lastEarlyAnnounce=0, terminalAnnounced=false;
   let earlyIdx=-1, earlyN=0, okAnnouncedIdx=-1, preOkIdx=-1;          // 早発回数・定刻案内
@@ -455,14 +472,71 @@
   let nameSpeech = lsGet('mon_name_speech')!=='0';   // バス停名の読み上げ(既定ON)
 
   // ---- 音声(iOS Safari: ユーザー操作でunlock) ----
-  function loadVoices(){ try{ jaVoices = window.speechSynthesis.getVoices().filter(v=>/ja|JP/i.test(v.lang)); }catch(e){} }
+  let enVoices=[];
+  function loadVoices(){ try{
+    const v=window.speechSynthesis.getVoices();
+    jaVoices = v.filter(x=>/ja|JP/i.test(x.lang));
+    enVoices = v.filter(x=>/^en[-_]?/i.test(x.lang));
+    enVoicePicked = null;
+  }catch(e){} }
+  function hasEnVoice(){ if(!enVoices.length) loadVoices(); return enVoices.length>0; }
+  // 端末に入っている英語音声の中から、いちばん自然に聞こえるものを選ぶ。
+  // 端末ごとに入っている声が違うため、名前と言語で優先順位を付ける。
+  const EN_GOOD=[/\bAva\b/i,/\bSamantha\b/i,/\bAllison\b/i,/\bSiri\b/i,/Google US English/i,
+                 /Microsoft (Aria|Jenny|Guy|Michelle|Ana)/i,/Natural/i,/Enhanced/i,/Premium/i,/Neural/i];
+  const EN_BAD =[/compact/i,/eloquence/i,/espeak/i,/novelty/i,/Fred/i,/Albert/i,/Zarvox/i,/Trinoids/i];
+  let enVoicePicked=null;
+  function pickEnVoice(){
+    if(enVoicePicked) return enVoicePicked;
+    if(!enVoices.length) loadVoices();
+    if(!enVoices.length) return null;
+    const score=v=>{
+      let p = /^en[-_]US/i.test(v.lang) ? 40 : (/^en[-_]GB/i.test(v.lang) ? 28 : 12);
+      EN_GOOD.forEach((re,i)=>{ if(re.test(v.name||'')) p += 30 - i; });
+      EN_BAD.forEach(re=>{ if(re.test(v.name||'')) p -= 40; });
+      if(v.localService===false) p += 4;        // 読み上げの質が高いことが多い
+      return p;
+    };
+    enVoicePicked = enVoices.slice().sort((a,b)=>score(b)-score(a))[0];
+    return enVoicePicked;
+  }
   function primeAudio(){ if(audioPrimed) return; try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; window.speechSynthesis.speak(u); audioPrimed=true; }catch(e){} }
-  function speak(text){
+  // 文を言語ごとに分けて続けて読む。停留所名は日本語の声のままにするため
+  function speakParts(parts){
     const vol=VOL[volLevel]; if(vol<=0) return;
-    try{ window.speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.lang='ja-JP';
-      if(!jaVoices.length) loadVoices(); if(jaVoices[0]) u.voice=jaVoices[0];
-      u.rate=1.0; u.volume=vol; window.speechSynthesis.speak(u);
+    try{
+      window.speechSynthesis.cancel();
+      if(!jaVoices.length || !enVoices.length) loadVoices();
+      parts.filter(p=>p && p.t && String(p.t).trim()).forEach(p=>{
+        const u=new SpeechSynthesisUtterance(String(p.t));
+        if(p.l==='en' && enVoices.length){ const ev=pickEnVoice(); u.lang=(ev&&ev.lang)||'en-US'; if(ev) u.voice=ev; }
+        else { u.lang='ja-JP'; if(jaVoices[0]) u.voice=jaVoices[0]; }
+        u.rate = (p.l==='en') ? 0.95 : 1.0;   // 英語は少しゆっくりの方が聞き取りやすい
+        u.volume=vol; window.speechSynthesis.speak(u);
+      });
     }catch(e){}
+  }
+  // 英語表示でも、端末に英語の声が無ければ日本語の声で読む
+  function speak(text){ speakParts([{t:text, l:(lang==='en' && hasEnVoice()) ? 'en' : 'ja'}]); }
+  // 「Next stop is 〇〇.」… 停留所名だけ日本語の声。名前のあとに短い間を置く
+  function speakNext(prefix, name){
+    if(lang==='en' && hasEnVoice()) speakParts([{t:prefix,l:'en'},{t:name+'。',l:'ja'}]);
+    else speakParts([{t:prefix+(lang==='en'?' ':'')+name+T('です'), l:'ja'}]);
+  }
+  // 文を言語ごとの断片に分ける。jaKeys に挙げた差し込み(地名など)は日本語の声で読む
+  function partsOf(key, vars, jaKeys){
+    if(!(lang==='en' && hasEnVoice())) return [{t:T(key,vars), l:'ja'}];
+    const SEP='\u0001', tmp={};
+    for(const k in vars) tmp[k] = (jaKeys||[]).includes(k) ? SEP+vars[k]+SEP : vars[k];
+    return T(key,tmp).split(SEP)
+      .map((seg,i)=>({t:seg, l:(i%2) ? 'ja' : 'en'}))
+      .filter(p=>String(p.t).trim());
+  }
+  // 開始の挨拶。英語でも「キバリンショロー」は島口のまま日本語の声で読む
+  function speakOpening(){
+    if(lang==='en' && hasEnVoice())
+      speakParts([{t:T('ドラサポを開始します。キバリンショロー、ご安全に！'),l:'en'},{t:'キバリンショロー',l:'ja'}]);
+    else speakParts([{t:'ドラサポを開始します。キバリンショロー、ご安全に！',l:'ja'}]);
   }
   function speakStop(text){ if(nameSpeech) speak(text); }   // バス停名読み上げ(ON時のみ)
   const yomi = s => (s && (s.kana || s.name)) || '';   // ⑦ 発音はkana優先
@@ -471,6 +545,220 @@
   const $ = id => document.getElementById(id);
   let toastT=null;
   function toast(msg){ const el=$('toast'); if(!el) return; el.textContent=msg; el.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('show'), 2400); }
+
+  /* ===== 日本語 / English の切り替え ==============================
+     ・辞書のキーは日本語の原文そのもの。英訳が無ければ日本語のまま出す
+     ・{xx} は差し込み。T('残り {n} 分', {n:3}) のように使う
+     ・画面に最初から書いてある文字は、起動時に文字を覚えておき、
+       切替時にまとめて差し替える(HTML側に印を付けなくて済む)
+     ・停留所名は日本語のまま。読み上げも日本語の声で読む
+     ================================================================ */
+  let lang = (lsGet('mon_lang')==='en') ? 'en' : 'ja';
+  const L = {
+    // --- 画面に固定で書いてある文字 ---
+    'しまバスドラサポ':'Shimabus DoraSapo',
+    'ドラサポ':'DoraSapo',
+    'しまバス ドライバーズサポート':'Shimabus Driver Support',
+    '画面をタップしてスタート':'Tap the screen to start',
+    '🚌 しまバスドラサポ':'🚌 Shimabus DoraSapo',
+    'ありがっ様りょうた':'Thank you',
+    '日付':'Date',
+    '動作モード':'Mode',
+    '実GPS':'Real GPS',
+    'デモ':'Demo',
+    'ダイヤ種別(日付から自動判定・祝日は手動で切替)':'Service type (set from the date; switch manually for holidays)',
+    '平日':'Weekday',
+    '土日祝':'Weekend / holiday',
+    '📋 ダイヤ一覧を表示':'📋 Show schedule list',
+    'ダイヤ番号':'Schedule no.',
+    'コース一覧を取得':'Load courses',
+    '✖ アプリを閉じる':'✖ Close the app',
+    '📖 使い方ガイドを見る':'📖 Open the user guide',
+    'コースを選択':'Select a course',
+    '← 設定へ戻る':'← Back to settings',
+    '運行前':'Before service',
+    'GPSを開始してください':'Please start GPS',
+    '🚌 後続バス':'🚌 Next buses',
+    '💰 料金一覧':'💰 Fares',
+    'コース':'Courses',
+    '開始':'Start',
+    '停止':'Stop',
+    '◀前停':'◀ Prev',
+    '次停▶':'Next ▶',
+    '📍補正':'📍 Fix',
+    '定刻 --:--':'Sched --:--',
+    '速度':'Speed',
+    '⏸ 停車':'⏸ Hold',
+    '▶ 発車':'▶ Depart',
+    '実時間':'Real time',
+    'ダイヤ — ・ —':'Schedule — · —',
+    'この便は「—」行きです':'This bus is bound for “—”',
+    '⚠ 方向幕変更を確認':'⚠ Destination sign checked',
+    '▶ 開始':'▶ Start',
+    'キャンセル（コース選択へ）':'Cancel (back to courses)',
+    '発車まで':'To departure',
+    'ダイヤ一覧':'Schedule list',
+    '後続バス':'Next buses',
+    '料金一覧':'Fares',
+    '🏁 終点に到着':'🏁 Arrived at the final stop',
+    'お疲れさまでした':'Well done',
+    '画面をタップで閉じます':'Tap the screen to close',
+    '例: 31':'e.g. 31',
+    // --- ボタンの状態表示 ---
+    '🔊大':'🔊 High','🔉中':'🔉 Mid','🔈小':'🔈 Low','🔇消':'🔇 Off',
+    '🗣停名':'🗣 Stops','🔇停名':'🔇 Stops',
+    // --- 運行中の表示 ---
+    '走行中':'Running',
+    '✅ 正常運行':'✅ On schedule',
+    '🚨 早発注意':'🚨 Too early',
+    '🚏 始発 待機':'🚏 Waiting at origin',
+    '運行終了(全停通過)':'Service finished',
+    'ちょい遅れ！':'Slightly late',
+    'だいぶ遅れ！':'Quite late',
+    '大幅遅延！':'Very late',
+    '次は 終点':'Next: final stop',
+    '完了':'Done',
+    '点検':'Inspection','回送':'Out of service','実車':'In service','清掃':'Cleaning','不明':'Unknown',
+    '停留所データ未整備':'No stop data',
+    '納金':'Cash drop',
+    '始発':'From','終着':'To',
+    '次のコース':'Next course',
+    '本日のダイヤ':"Today's schedule",
+    '押すと次のコースへ ▶':'Tap for the next course ▶',
+    'お客様が乗ったバス停を見てください':'Check where the passenger boarded',
+    'GPS開始 または デモで確認':'Start GPS, or try the demo',
+    '取得中…':'Loading…',
+    '停留所データを取得中…':'Loading stop data…',
+    '現在地を取得中…':'Getting your location…',
+    'GPS取得中…':'Acquiring GPS…',
+    'GPS非対応端末':'This device has no GPS',
+    'この端末はGPS非対応':'This device has no GPS',
+    'ダイヤがありません':'No schedules',
+    '取得に失敗しました':'Could not load',
+    '通信エラー':'Network error',
+    '後続バス無し':'No following buses',
+    '対象バス停がありません':'No target stop',
+    'コースが選択されていません':'No course selected',
+    '停留所データがありません':'No stop data',
+    'ダイヤ番号を入力してください':'Enter the schedule number',
+    '運賃データがありません（圏外の場合は電波の届く場所で再度お試しください）':
+      'No fare data (if you are out of range, try again where there is signal)',
+    'この停までの運賃データがありません':'No fare data for this stop',
+    'このコースには停留所データがありません(count=0)':'This course has no stop data (count = 0)',
+    '停留所データの解析に失敗しました(JSONではない応答)。SW更新のため再読み込みしてください':
+      'Could not read the stop data. Please reload the app.',
+    '取消をDBに反映できませんでした':'Could not save the undo',
+    '座標保存に失敗: ':'Could not save the position: ',
+    '座標保存の通信に失敗しました':'Could not reach the server to save the position',
+    '取消の保存に失敗: ':'Could not save the undo: ',
+    '取消の通信に失敗しました':'Could not reach the server',
+    '現在地取得に失敗: ':'Could not get your location: ',
+    '位置情報エラー: ':'Location error: ',
+    '停留所データ取得エラー: ':'Stop data error: ',
+    '停留所データ取得エラー: HTTP ':'Stop data error: HTTP ',
+    '取得失敗: ':'Load failed: ',
+    '通信エラー: ':'Network error: ',
+    '停留所名の読み上げオン':'Stop announcements on',
+    // --- 差し込みのある文 ---
+    '現在地から 約 {d} m':'About {d} m away',
+    '次々は {name}（{time}）':'Then: {name} ({time})',
+    '次: {name}':'Next: {name}',
+    '定刻({time})まで待機':'Waiting until {time}',
+    '次まで(到着後に早発判定) 定刻 {time}':'To the next stop · scheduled {time}',
+    '― 休憩 {min}分 ―':'— Break {min} min —',
+    '☕ {min}分 休憩が入ります':'☕ {min} min break',
+    '{place} 始発':'From {place}',
+    'ダイヤ {no}({type})のコースが見つかりません':'No courses for schedule {no} ({type})',
+    'ダイヤ {no} ・ {type} ・ {n}コース':'Schedule {no} · {type} · {n} courses',
+    'ダイヤ一覧（{type}）':'Schedule list ({type})',
+    'ダイヤ {no} ・ {type}':'Schedule {no} · {type}',
+    'この便は「{dest}」行きです':'This bus is bound for “{dest}”',
+    '始発時刻':'Departure','タッチ番号':'Touch no.','デジタル番号':'Digital no.',
+    'タッチ {touch}':'Touch {touch}',
+    'タッチ {touch} ・ デジタル{digital}':'Touch {touch} · Digital {digital}',
+    '後続バス（{name}）':'Buses after {name}',
+    '{name} までの運賃':'Fares to {name}',
+    '{price}円':'¥{price}',
+    '現在地に近い「{name}」から開始します':'Starting from the nearest stop, {name}',
+    '「{name}」の補正を取り消しますか？':'Undo the position fix for {name}?',
+    '「{name}」の補正を取り消しました':'Position fix for {name} was undone',
+    '「{name}」を補正しました・停止時に保存(もう一度押すと取消)':
+      'Position fixed for {name}. It is saved when you stop (tap again to undo).',
+    '座標を {n} 件 保存しました':'Saved {n} position fix(es)',
+    'GPS精度が低いため補正できません（±{acc}m・{max}m以内で実施）':
+      'GPS accuracy is too low (±{acc} m; must be within {max} m)',
+    '定刻 {time} / ':'Sched {time} / ',
+    'ちょうど':'on time',
+    '{amt} 早い':'{amt} early',
+    '{amt} 遅い':'{amt} late',
+    '{m}分{s}秒':'{m} min {s} s',
+    '{s}秒':'{s} s',
+    '{n}/{total}':'{n}/{total}',
+    '本日のダイヤは終了しました。':"Today's schedule is complete.",
+    'お気をつけて車庫へ':'Please return to the depot',
+    'お戻りください。':'safely.',
+    // --- 読み上げ(英語の声で読む部分) ---
+    '次は、':'Next stop is',
+    '次は終点、':'Last stop,',
+    'です':'',
+    '早発です':"You're too early.",
+    '定刻です。':'Right on time.',
+    '定刻です':"It's time to depart.",
+    '定刻1分前です':'One minute until departure.',
+    '早発に注意してください':"Careful. Don't leave early.",
+    '終点に到着しました。お疲れさまでした':"You've arrived at the last stop. Nice work.",
+    '本日のダイヤは終了しました。お気をつけて車庫へお戻りください':
+      "That's the end of today's schedule. Drive safely back to the depot.",
+    'ドラサポを開始します。キバリンショロー、ご安全に！':'Starting Dora Sapo. Have a safe drive!',
+    '音量大':'Volume high','音量中':'Volume medium','音量小':'Volume low',
+    '発車カウントダウン中です。終わってから切り替えます':'Counting down to departure — language will switch after it finishes',
+    '{min}ふん、きゅうけいがはいります。':'You have a {min} minute break.',
+    '次のコースは、{place}始発、{time}です':'Your next course leaves {place} at {time}.'
+  };
+  function T(ja, vars){
+    let s = (lang==='en' && L[ja]!=null) ? L[ja] : ja;
+    if(vars) for(const k in vars) s = s.split('{'+k+'}').join(vars[k]);
+    return s;
+  }
+  // 画面に最初から書いてある文字を覚えておき、切替でまとめて差し替える
+  const staticTexts=[];
+  function scanStaticTexts(){
+    const w=document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let n; while((n=w.nextNode())){
+      const t=n.nodeValue.trim();
+      if(t && L[t]!=null) staticTexts.push({node:n, ja:n.nodeValue});
+    }
+    document.querySelectorAll('[placeholder]').forEach(el=>{
+      if(L[el.placeholder]!=null) staticTexts.push({el, attr:'placeholder', ja:el.placeholder});
+    });
+  }
+  function applyLang(){
+    staticTexts.forEach(x=>{
+      const v = (lang==='en' && L[x.ja.trim()]!=null)
+        ? x.ja.replace(x.ja.trim(), L[x.ja.trim()]) : x.ja;
+      if(x.node) x.node.nodeValue=v; else x.el.setAttribute(x.attr, v);
+    });
+    document.documentElement.lang = (lang==='en') ? 'en' : 'ja';
+    const b=$('langBtn'); if(b) b.textContent = (lang==='en') ? '日本語' : 'EN';
+    const ml=$('manualLink'); if(ml) ml.href = './manual.html' + (lang==='en' ? '?lang=en' : '');   // ガイドも同じ言語で開く
+    updateVolBtn(); updateNameBtn();
+    // いま出ている画面を描き直す(走行中でなければ待機表示も作り直す)
+    if(courses.length && $('scList').classList.contains('active'))
+      renderCourses({dia_no:currentDiaNo, count:courses.length});
+    if(stops.length){
+      if(typeof isRunning==='function' && isRunning()) refreshDisp(stops[targetIndex]);
+      else resetMonUI();
+    }
+  }
+  function toggleLang(){
+    if(depTimer){ toast(T('発車カウントダウン中です。終わってから切り替えます')); return; }
+    try{ window.speechSynthesis.cancel(); }catch(e){}
+    lang = (lang==='en') ? 'ja' : 'en';
+    lsSet('mon_lang', lang);
+    applyLang();
+  }
+
+
   function setEta(hm){ const p=(hm||'--:--').split(':'); $('targetEtaH').textContent=p[0]||'--'; $('targetEtaM').textContent=p[1]||'--'; }  // ⑪ 時/分2段
   function dispName(s){ return (s && corrections[s.busstop_id]) ? s.name+'🔴' : (s?s.name:''); }  // ⑫ 補正済は🔴
 
@@ -502,51 +790,51 @@
   // ---- コース一覧取得 ----
   $('loadCoursesBtn').addEventListener('click', async ()=>{
     const dia=($('diaInput').value||'').replace(/[^0-9]/g,'');
-    if(!dia){ setupMsg('ダイヤ番号を入力してください', true); return; }
+    if(!dia){ setupMsg(T('ダイヤ番号を入力してください'), true); return; }
     lsSet('mon_dia', dia);
-    setupMsg('取得中…', false);
+    setupMsg(T('取得中…'), false);
     try{
       const r=await fetch(`${API_BASE}courses.php?dia_no=${dia}&day_type=${dayType}&_=${Date.now()}`, {cache:'no-store'});
       const j=await r.json();
-      if(!r.ok || j.error){ setupMsg('取得失敗: '+(j.error||r.status), true); return; }
-      if(!j.courses || !j.courses.length){ setupMsg(`ダイヤ ${j.dia_no}(${dayType===1?'平日':'土日祝'})のコースが見つかりません`, true); return; }
+      if(!r.ok || j.error){ setupMsg(T('取得失敗: ')+(j.error||r.status), true); return; }
+      if(!j.courses || !j.courses.length){ setupMsg(T('ダイヤ {no}({type})のコースが見つかりません',{no:j.dia_no,type:T(dayType===1?'平日':'土日祝')}), true); return; }
       courses=j.courses; currentDiaNo=j.dia_no;
       renderCourses(j);
       show('scList');
-    }catch(e){ setupMsg('通信エラー: '+e.message, true); }
+    }catch(e){ setupMsg(T('通信エラー: ')+e.message, true); }
   });
   function setupMsg(t,err){ const m=$('setupMsg'); m.textContent=t; m.classList.toggle('err',!!err); }
 
   // ---- ダイヤ一覧(選択中の平日/土日祝) ----
   $('diaListBtn').addEventListener('click', async ()=>{
-    $('dlTitle').textContent = `ダイヤ一覧（${dayType===1?'平日':'土日祝'}）`;
-    $('dlBody').innerHTML = '<div class="dl-loading">取得中…</div>';
+    $('dlTitle').textContent = T('ダイヤ一覧（{type}）',{type:T(dayType===1?'平日':'土日祝')});
+    $('dlBody').innerHTML = `<div class="dl-loading">${T('取得中…')}</div>`;
     $('diaListOverlay').classList.add('show');
     try{
       const r=await fetch(`${API_BASE}diagrams.php?day_type=${dayType}&_=${Date.now()}`, {cache:'no-store'});
       const j=await r.json();
-      if(!r.ok || j.error || !j.diagrams){ $('dlBody').innerHTML='<div class="dl-loading">取得に失敗しました</div>'; return; }
-      if(!j.diagrams.length){ $('dlBody').innerHTML='<div class="dl-loading">ダイヤがありません</div>'; return; }
+      if(!r.ok || j.error || !j.diagrams){ $('dlBody').innerHTML=`<div class="dl-loading">${T('取得に失敗しました')}</div>`; return; }
+      if(!j.diagrams.length){ $('dlBody').innerHTML=`<div class="dl-loading">${T('ダイヤがありません')}</div>`; return; }
       $('dlBody').innerHTML='';
       j.diagrams.forEach(d=>{
         const b=document.createElement('button'); b.className='dl-row';
         b.innerHTML =
           `<div class="dl-no">${parseInt(d.dia_no,10)}</div>`+
           `<div class="dl-route">`+
-            `<div class="dl-line"><span class="dl-lb">始発</span><span class="dl-pl">${d.start_place||'—'}</span><span class="dl-t">${d.start_time||'--:--'}</span></div>`+
-            `<div class="dl-line"><span class="dl-lb">終着</span><span class="dl-pl">${d.end_place||'—'}</span><span class="dl-t">${d.end_time||'--:--'}</span></div>`+
+            `<div class="dl-line"><span class="dl-lb">${T('始発')}</span><span class="dl-pl">${d.start_place||'—'}</span><span class="dl-t">${d.start_time||'--:--'}</span></div>`+
+            `<div class="dl-line"><span class="dl-lb">${T('終着')}</span><span class="dl-pl">${d.end_place||'—'}</span><span class="dl-t">${d.end_time||'--:--'}</span></div>`+
           `</div>`;
         b.addEventListener('click', ()=>{ $('diaInput').value=String(parseInt(d.dia_no,10)); $('diaListOverlay').classList.remove('show'); $('loadCoursesBtn').click(); });
         $('dlBody').appendChild(b);
       });
-    }catch(e){ $('dlBody').innerHTML='<div class="dl-loading">通信エラー</div>'; }
+    }catch(e){ $('dlBody').innerHTML=`<div class="dl-loading">${T('通信エラー')}</div>`; }
   });
   $('dlClose').addEventListener('click', ()=> $('diaListOverlay').classList.remove('show'));
 
   function renderCourses(j){
-    $('listHead').textContent = `ダイヤ ${j.dia_no} ・ ${dayType===1?'平日':'土日祝'} ・ ${j.count}コース`;
+    $('listHead').textContent = T('ダイヤ {no} ・ {type} ・ {n}コース',{no:j.dia_no,type:T(dayType===1?'平日':'土日祝'),n:j.count});
     const wrap=$('courseList'); wrap.innerHTML='';
-    const catName={1:'点検',2:'回送',3:'実車',4:'—',5:'清掃'};
+    const catName={1:T('点検'),2:T('回送'),3:T('実車'),4:'—',5:T('清掃')};
     courses.forEach((c,idx)=>{
       const btn=document.createElement('button'); btn.className='course';
       const noStops = (c.category===3 && !c.arrival_time);   // 着時刻が無い = 停留所データ未整備
@@ -556,8 +844,8 @@
         `<div class="seqn">${c.seq}</div>`+
         `<div class="body"><div class="route">${c.start_place||'—'} → ${c.end_place||'—'}`+
           (c.category!==3?`<span class="badge">${catName[c.category]||c.category}</span>`:'')+
-          (noStops?`<span class="badge nodata">停留所データ未整備</span>`:'')+
-          (c.settlement_flag?`<span class="badge pay">納金</span>`:'')+`</div></div>`+
+          (noStops?`<span class="badge nodata">${T('停留所データ未整備')}</span>`:'')+
+          (c.settlement_flag?`<span class="badge pay">${T('納金')}</span>`:'')+`</div></div>`+
         `<div class="time">${c.departure_time||''}</div>`;
       if(selectable) btn.addEventListener('click', ()=> selectCourse(c));
       wrap.appendChild(btn);
@@ -565,7 +853,7 @@
       const nx=courses[idx+1];
       if(nx && c.arrival_time && nx.departure_time){
         const a=toMin(c.arrival_time), dp=toMin(nx.departure_time);
-        if(a!=null && dp!=null && dp-a>=REST_MIN){ const r=document.createElement('div'); r.className='rest-row'; r.textContent=`― 休憩 ${dp-a}分 ―`; wrap.appendChild(r); }
+        if(a!=null && dp!=null && dp-a>=REST_MIN){ const r=document.createElement('div'); r.className='rest-row'; r.textContent=T('― 休憩 {min}分 ―',{min:dp-a}); wrap.appendChild(r); }
       }
     });
   }
@@ -579,23 +867,23 @@
 
   // ⑨ 後続バス(このバス停をこの後通るバス 最大5件)
   $('nextBusBtn').addEventListener('click', async ()=>{
-    const s=stops[targetIndex]; if(!s || !s.busstop_id){ toast('対象バス停がありません'); return; }
-    $('nbTitle').textContent=`後続バス（${s.name}）`;
-    $('nbBody').innerHTML='<div class="dl-loading">取得中…</div>';
+    const s=stops[targetIndex]; if(!s || !s.busstop_id){ toast(T('対象バス停がありません')); return; }
+    $('nbTitle').textContent=T('後続バス（{name}）',{name:s.name});
+    $('nbBody').innerHTML=`<div class="dl-loading">${T('取得中…')}</div>`;
     $('nextBusOverlay').classList.add('show');
     const now=new Date(); const after=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
     try{
       const r=await fetch(`${API_BASE}next_buses.php?busstop_id=${s.busstop_id}&day_type=${dayType}&after=${after}&_=${Date.now()}`, {cache:'no-store'});
       const j=await r.json();
-      if(!r.ok || j.error){ $('nbBody').innerHTML='<div class="dl-loading">取得に失敗しました</div>'; return; }
-      if(!j.buses || !j.buses.length){ $('nbBody').innerHTML='<div class="dl-loading">後続バス無し</div>'; return; }
+      if(!r.ok || j.error){ $('nbBody').innerHTML=`<div class="dl-loading">${T('取得に失敗しました')}</div>`; return; }
+      if(!j.buses || !j.buses.length){ $('nbBody').innerHTML=`<div class="dl-loading">${T('後続バス無し')}</div>`; return; }
       $('nbBody').innerHTML='';
       j.buses.forEach(b=>{
         const row=document.createElement('div'); row.className='dl-row';
         row.innerHTML=`<div class="nb-no">${zdia(b.dia_no)}</div><div class="nb-dest">${b.end_place||'—'}</div><div class="nb-t">${b.time}</div>`;
         $('nbBody').appendChild(row);
       });
-    }catch(e){ $('nbBody').innerHTML='<div class="dl-loading">通信エラー</div>'; }
+    }catch(e){ $('nbBody').innerHTML=`<div class="dl-loading">${T('通信エラー')}</div>`; }
   });
   // ③ 料金一覧(始発から各バス停まで)
   // コース選択時に三角表を1回だけ取得して保持(以降はオフラインでも表示可)
@@ -609,18 +897,18 @@
     }catch(e){ /* 圏外等。押した時に再取得を試みる */ }
   }
   $('fareBtn').addEventListener('click', async ()=>{
-    if(!course){ toast('コースが選択されていません'); return; }
-    $('frTitle').textContent='料金一覧';
+    if(!course){ toast(T('コースが選択されていません')); return; }
+    $('frTitle').textContent=T('料金一覧');
     $('fareOverlay').classList.add('show');
     if(!fareData){   // 先読みできていなければ、この場で取得を試みる
-      $('frBody').innerHTML='<div class="dl-loading">取得中…</div>';
+      $('frBody').innerHTML=`<div class="dl-loading">${T('取得中…')}</div>`;
       await prefetchFares(course);
     }
     renderFares();
   });
   function renderFares(){
     const body=$('frBody');
-    if(!fareData || !fareData.matrix){ body.innerHTML='<div class="dl-loading">運賃データがありません（圏外の場合は電波の届く場所で再度お試しください）</div>'; return; }
+    if(!fareData || !fareData.matrix){ body.innerHTML=`<div class="dl-loading">${T('運賃データがありません（圏外の場合は電波の届く場所で再度お試しください）')}</div>`; return; }
     const cur=stops[targetIndex];
     // 現在停のseqを、先読みした停留所リストから busstop_id で解決
     let toSeq=0, toName='';
@@ -631,14 +919,14 @@
     const nameOf=seq=>{ const s=(fareData.stops||[]).find(x=>x.seq===seq); return s?s.name:('停'+seq); };
     const list=(toSeq && fareData.matrix[toSeq]) ? fareData.matrix[toSeq] : null;
     if(!list || !list.length){
-      $('frTitle').textContent='料金一覧';
-      body.innerHTML=`<div class="dl-loading">${fareData.note||'この停までの運賃データがありません'}</div>`; return;
+      $('frTitle').textContent=T('料金一覧');
+      body.innerHTML=`<div class="dl-loading">${fareData.note||T('この停までの運賃データがありません')}</div>`; return;
     }
-    $('frTitle').textContent=`${toName||cur&&cur.name||'現在停'} までの運賃`;
-    body.innerHTML='<div class="fr-note">お客様が乗ったバス停を見てください</div>';
+    $('frTitle').textContent=T('{name} までの運賃',{name:toName||cur&&cur.name||''});
+    body.innerHTML=`<div class="fr-note">${T('お客様が乗ったバス停を見てください')}</div>`;
     list.forEach(f=>{
       const row=document.createElement('div'); row.className='dl-row';
-      row.innerHTML=`<div class="nb-no">${f.seq}</div><div class="nb-dest">${nameOf(f.seq)}</div><div class="nb-t">${f.price}円</div>`;
+      row.innerHTML=`<div class="nb-no">${f.seq}</div><div class="nb-dest">${nameOf(f.seq)}</div><div class="nb-t">${T('{price}円',{price:f.price})}</div>`;
       body.appendChild(row);
     });
   }
@@ -648,27 +936,27 @@
   // ---- コース選択→停留所取得→モニター ----
   async function selectCourse(c){
     course=c;
-    $('gpsNote').textContent='停留所データを取得中…';
+    $('gpsNote').textContent=T('停留所データを取得中…');
     try{
       const r=await fetch(`${API_BASE}course_stops.php?dia_course_id=${c.dia_course_id}&_=${Date.now()}`, {cache:'no-store'});
-      if(!r.ok){ alert('停留所データ取得エラー: HTTP '+r.status); return; }
+      if(!r.ok){ alert(T('停留所データ取得エラー: HTTP ')+r.status); return; }
       let j=null;
-      try{ j=await r.json(); }catch(pe){ alert('停留所データの解析に失敗しました(JSONではない応答)。SW更新のため再読み込みしてください'); return; }
-      if(!j || j.error){ alert('停留所データ取得エラー: '+((j&&j.error)||'不明')); return; }
-      if(!j.stops || !j.stops.length){ alert('このコースには停留所データがありません(count=0)'); return; }
+      try{ j=await r.json(); }catch(pe){ alert(T('停留所データの解析に失敗しました(JSONではない応答)。SW更新のため再読み込みしてください')); return; }
+      if(!j || j.error){ alert(T('停留所データ取得エラー: ')+((j&&j.error)||T('不明'))); return; }
+      if(!j.stops || !j.stops.length){ alert(T('このコースには停留所データがありません(count=0)')); return; }
       stops=j.stops;
       targetIndex=0; lastAtStopIndex=-1; corrections={};   // 新コースは補正をリセット
       $('monCourse').textContent=`${c.start_place}(${hmColon(stops[0])}) → ${c.end_place}(${hmColon(stops[stops.length-1])})`;
-      $('monSub').textContent=`タッチ ${c.touch_no||'—'}${c.digital_no?' ・ デジタル'+c.digital_no:''}`;
+      $('monSub').textContent = c.digital_no ? T('タッチ {touch} ・ デジタル{digital}',{touch:c.touch_no||'—',digital:c.digital_no})
+                                            : T('タッチ {touch}',{touch:c.touch_no||'—'});
       buildRail();
       resetMonUI();
-      $('simStop').max=String(stops.length-1); $('simStop').value='0';
       prefetchFares(c);            // 圏外対策: 運賃(三角表)をこの時点で1回だけ取得して保持
       show('scMon');
-      if(mode==='gps') showConfirm();   // ① コース選択後に行き先確認ポップアップ
-    }catch(e){ alert('通信エラー: '+e.message); }
+      showConfirm();   // ① コース選択後に行き先確認ポップアップ(デモも同じ)
+    }catch(e){ alert(T('通信エラー: ')+e.message); }
   }
-  $('monBack').onclick=()=>{ flushCorrections(); liveStop(); stopGps(); hideFinishFx(); show('scList'); };   // 未保存の補正を取りこぼさない
+  $('monBack').onclick=()=>{ flushCorrections(); demoStop(); stopGps(); hideFinishFx(); show('scList'); };   // 未保存の補正を取りこぼさない
 
   // ---- 定刻(絶対時刻)算出 ----
   function schedDate(stop){ const p=(stop.scheduled_time||'00:00:00').split(':').map(Number); const d=new Date(); d.setHours(p[0]||0,p[1]||0,p[2]||0,0); return d; }
@@ -695,7 +983,7 @@
         if(isLast) return { state:'terminal', stop, remainingSec, d };  // 終点からは進めない
         const nextStop = stops[targetIndex+1];   // 発車=半径を外れた → 次を案内
         advance();
-        if(nextStop){ speakStop((targetIndex===stops.length-1 ? '次は終点、' : '次は、') + yomi(nextStop) + 'です'); }  // ④/⑦
+        if(nextStop){ if(nameSpeech) speakNext(T(targetIndex===stops.length-1 ? '次は終点、' : '次は、'), yomi(nextStop)); }  // ④/⑦
         if(targetIndex>=stops.length) return {state:'finished'};
         return evaluate(lat,lng,now);
       }
@@ -731,14 +1019,15 @@
   function resetMonUI(){
     clearStateClasses();
     $('gpsNote').textContent='';   // ② 「停留所データを取得中…」等を消す
+    clearTimeout(fxAfter);             // フラッグ消去後の案内が遅れて出るのを止める
     $('nextCourseMsg').className='';   // 前のコースの「次のコース」案内を消す
-    $('stateTag').className='state-tag'; $('stateTag').textContent='運行前';
+    $('stateTag').className='state-tag'; $('stateTag').textContent=T('運行前');
     $('diff').className='diff appr'; $('diff').textContent='--:--';
-    $('caption').textContent='GPS開始 または デモで確認';
+    $('caption').textContent=T('GPS開始 または デモで確認');
     $('targetDist').textContent='';
     terminalAnnounced=false; lastEarlyAnnounce=0; curTargetName=null; earlyIdx=-1; earlyN=0; okAnnouncedIdx=-1; preOkIdx=-1;
     if(stops[0]){ setTargetName(dispName(stops[0])); setEta(hhmm(stops[0])); }
-    setNextPrev(stops[1] ? `次々は ${stops[1].name}（${hhmm(stops[1])}）` : '次は 終点');   // ① 最初から次停を表示
+    setNextPrev(stops[1] ? T('次々は {name}（{time}）',{name:stops[1].name,time:hhmm(stops[1])}) : T('次は 終点'));   // ① 最初から次停を表示
     updateRail();
   }
   // 遅れの程度で色分け: 5分以上=黄, 10分以上=橙 (remainingSecは負=遅れ)
@@ -752,22 +1041,22 @@
     clearStateClasses();
     const tag=$('stateTag'), diff=$('diff');
     tag.className='state-tag'; diff.className='diff';
-    $('targetDist').textContent = (st.d!=null && isFinite(st.d)) ? `現在地から 約 ${Math.round(st.d)} m` : '';   // ② 距離
+    $('targetDist').textContent = (st.d!=null && isFinite(st.d)) ? T('現在地から 約 {d} m',{d:Math.round(st.d)}) : '';   // ② 距離
     const nxt = st.state!=='finished' ? stops[targetIndex+1] : null;
-    setNextPrev(st.state==='finished' ? '' : (nxt ? `次々は ${nxt.name}（${hhmm(nxt)}）` : '次は 終点'));
+    setNextPrev(st.state==='finished' ? '' : (nxt ? T('次々は {name}（{time}）',{name:nxt.name,time:hhmm(nxt)}) : T('次は 終点')));
 
     if(st.state==='terminal'){   // ⑦ 終点到着(早発判定しない)
       document.body.classList.add('state-ok');
-      tag.classList.add('ok'); tag.textContent='🏁 終点に到着';
+      tag.classList.add('ok'); tag.textContent=T('🏁 終点に到着');
       diff.classList.add('ok'); diff.textContent='🏁';
-      $('caption').textContent='終点に到着しました。お疲れさまでした';
+      $('caption').textContent=T('終点に到着しました。お疲れさまでした');
       setTargetName(dispName(st.stop)); setEta(hhmm(st.stop)); $('nextPrev').textContent='';
-      if(!terminalAnnounced){ speak('終点に到着しました。お疲れさまでした'); terminalAnnounced=true; stopRun(); showFinishFx(st.stop);}   // 終点でGPS停止+補正保存+全画面演出
+      if(!terminalAnnounced){ speak(T('終点に到着しました。お疲れさまでした')); terminalAnnounced=true; stopRun(); showFinishFx(st.stop);}   // 終点でGPS停止+補正保存+全画面演出
       updateRail(); return;
     }
     if(st.state==='finished'){
-      tag.classList.add('appr'); tag.textContent='運行終了(全停通過)'; diff.classList.add('appr'); diff.textContent='--:--';
-      $('caption').textContent='お疲れさまでした'; setTargetName('—'); setEta('--:--'); $('nextPrev').textContent=''; $('targetDist').textContent='';
+      tag.classList.add('appr'); tag.textContent=T('運行終了(全停通過)'); diff.classList.add('appr'); diff.textContent='--:--';
+      $('caption').textContent=T('お疲れさまでした'); setTargetName('—'); setEta('--:--'); $('nextPrev').textContent=''; $('targetDist').textContent='';
       updateRail(); return;
     }
     setTargetName(dispName(st.stop));
@@ -775,37 +1064,37 @@
 
     if(st.state==='early'){
       document.body.classList.add('state-early');
-      tag.classList.add('early'); tag.textContent='🚨 早発注意';
+      tag.classList.add('early'); tag.textContent=T('🚨 早発注意');
       diff.classList.add('early'); diff.textContent=fmtSec(st.remainingSec);
       $('caption').textContent='';   // 冗長なメッセージは非表示(タグと大きな残り秒で十分)
       preOkIdx=targetIndex;                                                          // 定刻案内の対象に
       if(earlyIdx!==targetIndex){ earlyIdx=targetIndex; earlyN=0; }                  // ⑤ 停留所ごとにカウント
-      { const t=Date.now(); if(earlyN<1 && t-lastEarlyAnnounce>4000){ speak('早発です'); lastEarlyAnnounce=t; earlyN++; } }  // ⑦ 1回のみ
+      { const t=Date.now(); if(earlyN<1 && t-lastEarlyAnnounce>4000){ speak(T('早発です')); lastEarlyAnnounce=t; earlyN++; } }  // ⑦ 1回のみ
     } else if(st.state==='ok'){
       const stg=lateStage(st.remainingSec);   // 3分以上の遅れのみ段階表示
-      if(stg){ document.body.classList.add('state-'+stg.cls); tag.classList.add(stg.cls); diff.classList.add(stg.cls); tag.textContent=stg.label; diff.textContent=fmtSec(st.remainingSec); $('caption').textContent=''; }
-      else { document.body.classList.add('state-ok'); tag.classList.add('ok'); diff.classList.add('ok'); tag.textContent='✅ 正常運行'; diff.textContent=''; $('caption').textContent=''; }   // 3分未満は差分/文言なし(⑩)
-      if(preOkIdx===targetIndex && okAnnouncedIdx!==targetIndex){ okAnnouncedIdx=targetIndex; speak('定刻です。'); }  // ②定刻案内(早発だった停/始発地で1回)
+      if(stg){ document.body.classList.add('state-'+stg.cls); tag.classList.add(stg.cls); diff.classList.add(stg.cls); tag.textContent=T(stg.label); diff.textContent=fmtSec(st.remainingSec); $('caption').textContent=''; }
+      else { document.body.classList.add('state-ok'); tag.classList.add('ok'); diff.classList.add('ok'); tag.textContent=T('✅ 正常運行'); diff.textContent=''; $('caption').textContent=''; }   // 3分未満は差分/文言なし(⑩)
+      if(preOkIdx===targetIndex && okAnnouncedIdx!==targetIndex){ okAnnouncedIdx=targetIndex; speak(T('定刻です。')); }  // ②定刻案内(早発だった停/始発地で1回)
     } else if(st.state==='waiting'){   // 始発地は早発警告しない
-      tag.classList.add('appr'); tag.textContent='🚏 始発 待機';
+      tag.classList.add('appr'); tag.textContent=T('🚏 始発 待機');
       diff.classList.add('appr'); diff.textContent=fmtSec(st.remainingSec);
-      $('caption').textContent=`定刻(${hhmm(st.stop)})まで待機`;
+      $('caption').textContent=T('定刻({time})まで待機',{time:hhmm(st.stop)});
       preOkIdx=targetIndex;   // 始発地でも定刻案内の対象に
     } else { // approaching
       // ① 100m手前で定刻より30秒以上早い→注意アナウンス+画面フラッシュ(停ごと1回)
       // ② 終着バス停は到着地でそこに停まるため早発注意は出さない
       if(targetIndex < stops.length-1 &&
          st.d!=null && isFinite(st.d) && st.d<=100 && st.remainingSec>=30 && preEarlyWarnedIdx!==targetIndex){
-        preEarlyWarnedIdx=targetIndex; speak('早発に注意してください'); flashOnce();
+        preEarlyWarnedIdx=targetIndex; speak(T('早発に注意してください')); flashOnce();
       }
       if(st.remainingSec<0){
         const stg=lateStage(st.remainingSec);   // 3分以上の遅れのみ段階表示
-        if(stg){ document.body.classList.add('state-'+stg.cls); tag.classList.add(stg.cls); diff.classList.add(stg.cls); tag.textContent=stg.label; diff.textContent=fmtSec(st.remainingSec); $('caption').textContent=''; }
-        else { tag.classList.add('appr'); tag.textContent='走行中'; diff.classList.add('appr'); diff.textContent=''; $('caption').textContent=''; }   // 3分未満は差分を表示しない
+        if(stg){ document.body.classList.add('state-'+stg.cls); tag.classList.add(stg.cls); diff.classList.add(stg.cls); tag.textContent=T(stg.label); diff.textContent=fmtSec(st.remainingSec); $('caption').textContent=''; }
+        else { tag.classList.add('appr'); tag.textContent=T('走行中'); diff.classList.add('appr'); diff.textContent=''; $('caption').textContent=''; }   // 3分未満は差分を表示しない
       } else {
-        tag.classList.add('appr'); tag.textContent='走行中'; diff.classList.add('appr');
+        tag.classList.add('appr'); tag.textContent=T('走行中'); diff.classList.add('appr');
         diff.textContent=fmtSec(st.remainingSec);
-        $('caption').textContent=`次まで(到着後に早発判定) 定刻 ${hhmm(st.stop)}`;
+        $('caption').textContent=T('次まで(到着後に早発判定) 定刻 {time}',{time:hhmm(st.stop)});
       }
     }
     updateRail();
@@ -815,8 +1104,8 @@
     document.querySelectorAll('.rdot').forEach(d=>{ const i=+d.dataset.i; d.classList.toggle('passed', i<targetIndex); d.classList.toggle('cur', i===targetIndex); const s=stops[i]; d.classList.toggle('fixed', !!(s && corrections[s.busstop_id])); });
     const cur=stops[targetIndex];
     $('railTxt').innerHTML = targetIndex<stops.length
-      ? `<span class="rt-count">${targetIndex+1}<span class="rt-sep">/</span>${stops.length}</span><span class="rt-next">次: ${cur?cur.name:''}</span>`
-      : `<span class="rt-count">${stops.length}<span class="rt-sep">/</span>${stops.length}</span><span class="rt-next">完了</span>`;
+      ? `<span class="rt-count">${targetIndex+1}<span class="rt-sep">/</span>${stops.length}</span><span class="rt-next">${T('次: {name}',{name:cur?cur.name:''})}</span>`
+      : `<span class="rt-count">${stops.length}<span class="rt-sep">/</span>${stops.length}</span><span class="rt-next">${T('完了')}</span>`;
   }
 
   function update(lat,lng,now){ render(evaluate(lat,lng,now)); }
@@ -883,18 +1172,22 @@
       const a=toMin(course && course.arrival_time), dp=toMin(nx.departure_time);
       const rest=(a!=null && dp!=null && dp-a>=REST_MIN) ? (dp-a) : 0;
       el.className='show tap';
-      el.innerHTML=(rest?`<div class="nc-rest">☕ ${rest}分 休憩が入ります</div>`:`<div class="nc-lbl">次のコース</div>`)+
-        `<div class="nc-main">${nx.start_place||'—'} 始発　<span class="nc-time">${t||'--:--'}</span></div>`+
-        `<div class="nc-go">押すと次のコースへ ▶</div>`;
+      el.innerHTML=(rest?`<div class="nc-rest">${T('☕ {min}分 休憩が入ります',{min:rest})}</div>`:`<div class="nc-lbl">${T('次のコース')}</div>`)+
+        `<div class="nc-main">${T('{place} 始発',{place:nx.start_place||'—'})}　<span class="nc-time">${t||'--:--'}</span></div>`+
+        `<div class="nc-go">${T('押すと次のコースへ ▶')}</div>`;
       el.onclick=()=> selectCourse(nx);   // ① 押すと次のコースの確認画面へ
       // 読みを固定するため、休憩の案内はかなで指定(「ぶん」「やすみいこい」等の誤読を防ぐ)
-      speak((rest?`${rest}ふん、きゅうけいがはいります。`:'')+`次のコースは、${nx.start_place||''}始発、${(t||'').replace(':','時')}分です`);
+      speakParts([].concat(
+        rest ? partsOf('{min}ふん、きゅうけいがはいります。',{min:rest},[]) : [],
+        partsOf('次のコースは、{place}始発、{time}です',
+                {place:nx.start_place||'', time:(lang==='en' ? (t||'') : (t||'').replace(':','時')+'分')},
+                ['place'])));
     } else {
       el.className='show end'; el.onclick=null;   // 本日終了時は押しても何もしない
-      el.innerHTML=`<div class="nc-lbl">本日のダイヤ</div>`+
-        `<div class="nc-main"><span class="nc-line">本日のダイヤは終了しました。</span>`+
-        `<span class="nc-line">お気をつけて車庫へ</span><span class="nc-line">お戻りください。</span></div>`;
-      speak('本日のダイヤは終了しました。お気をつけて車庫へお戻りください');
+      el.innerHTML=`<div class="nc-lbl">${T('本日のダイヤ')}</div>`+
+        `<div class="nc-main"><span class="nc-line">${T('本日のダイヤは終了しました。')}</span>`+
+        `<span class="nc-line">${T('お気をつけて車庫へ')}</span><span class="nc-line">${T('お戻りください。')}</span></div>`;
+      speak(T('本日のダイヤは終了しました。お気をつけて車庫へお戻りください'));
     }
     fitNcLines(el);
   }
@@ -913,17 +1206,19 @@
   }
   function showFinishFx(stop){
     const fx=$('finishFx'); if(!fx) return;
-    $('fxSub').textContent = (stop && stop.name) ? `${stop.name}　お疲れさまでした` : 'お疲れさまでした';
+    $('fxSub').textContent = (stop && stop.name) ? `${stop.name}　${T('お疲れさまでした')}` : T('お疲れさまでした');
     fx.classList.remove('out'); fx.classList.add('show');
     fxPat=null; fxStart=0;
     if(!fxRaf) fxRaf=requestAnimationFrame(fxDraw);
     clearTimeout(fxTimer); fxTimer=setTimeout(hideFinishFx, 7000);
   }
+  let fxAfter=null;
   function hideFinishFx(){
     const fx=$('finishFx'); if(!fx || !fx.classList.contains('show')) return;
     clearTimeout(fxTimer);
     fx.classList.add('out');
-    setTimeout(()=>{ fx.classList.remove('show','out');
+    clearTimeout(fxAfter);
+    fxAfter=setTimeout(()=>{ fx.classList.remove('show','out');
       if(fxRaf){ cancelAnimationFrame(fxRaf); fxRaf=null; }            // 非表示中は描画を止める
       showNextCourseMsg();                                             // フラッグの後に次コースを案内
     }, 620);
@@ -931,6 +1226,7 @@
   ['pointerdown','click'].forEach(ev=> $('finishFx').addEventListener(ev, hideFinishFx));
   // ① 3秒以上停車 & DB座標と10m以上離れていれば 補正ボタンを点滅(地味に通知)
   function checkFixMsg(lat,lng){
+    if(mode==='demo'){ $('correctBtn').classList.remove('blink'); return; }   // デモでは座標補正を促さない
     const now=Date.now();
     if(runStartAt && now-runStartAt<FIX_QUIET_MS){ $('correctBtn').classList.remove('blink'); return; }   // ④ 開始直後は通知しない
     if(!stillPos || distM(lat,lng,stillPos.lat,stillPos.lng)>8){ stillPos={lat,lng}; stillSince=now; }   // 8m超で移動とみなしリセット
@@ -947,7 +1243,7 @@
   function startDepCountdown(){
     stopDepCountdown();
     if(!stops[0]) return;
-    const rem0=(schedDate(stops[0]).getTime()-Date.now())/1000;
+    const rem0=(schedDate(stops[0]).getTime()-nowMs())/1000;
     if(rem0<=0) return;              // 既に発車時刻を過ぎている→不要
     depMinAnn = rem0<=60;           // 60秒以内で開始したら「1分前」は省略
     depZeroAnn = false;
@@ -956,11 +1252,12 @@
   function stopDepCountdown(){ if(depTimer){ clearInterval(depTimer); depTimer=null; } $('depCount').classList.remove('show'); }
   function depTick(){
     if(targetIndex!==0 || !stops[0]){ stopDepCountdown(); return; }   // 発車して次停へ進んだら終了
-    const rem=(schedDate(stops[0]).getTime()-Date.now())/1000;
-    if(rem<=60 && !depMinAnn){ depMinAnn=true; speak('定刻1分前です'); }
+    const rem=(schedDate(stops[0]).getTime()-nowMs())/1000;
+    if(rem<=60 && !depMinAnn){ depMinAnn=true; speak(T('定刻1分前です')); }
     if(rem<=10 && rem>0){ $('depCountNum').textContent=String(Math.ceil(rem)); $('depCount').classList.add('show'); }
     else { $('depCount').classList.remove('show'); }
-    if(rem<=0){ if(!depZeroAnn){ depZeroAnn=true; okAnnouncedIdx=0; speak('定刻です'); } stopDepCountdown(); }
+    // 通常の判定側で既に「定刻です」を言っていれば重ねて言わない
+    if(rem<=0){ if(!depZeroAnn){ depZeroAnn=true; if(okAnnouncedIdx!==0){ okAnnouncedIdx=0; speak(T('定刻です')); } } stopDepCountdown(); }
   }
   // ② 始発地でない場所で開始→現在地に最も近いバス停から開始
   function autoStartTarget(lat,lng){
@@ -969,34 +1266,39 @@
     if(d0<=DEPART_NEAR_M){ targetIndex=0; lastAtStopIndex=-1; updateRail(); startDepCountdown(); return; }   // ① 始発地で開始
     let ni=-1,best=Infinity;
     stops.forEach((s,i)=>{ if(s.lat!=null){ const d=distM(lat,lng,s.lat,s.lng); if(d<best){best=d;ni=i;} } });
-    if(ni>=0){ targetIndex=ni; lastAtStopIndex=-1; updateRail(); toast(`現在地に近い「${stops[ni].name}」から開始します`); }
+    if(ni>=0){ targetIndex=ni; lastAtStopIndex=-1; updateRail(); toast(T('現在地に近い「{name}」から開始します',{name:stops[ni].name})); }
   }
 
   // ---- GPS ----
   function startGps(){
-    if(!navigator.geolocation){ $('gpsNote').textContent='GPS非対応端末'; return; }
-    $('gpsNote').textContent='GPS取得中…';
+    if(!navigator.geolocation){ $('gpsNote').textContent=T('GPS非対応端末'); return; }
+    $('gpsNote').textContent=T('GPS取得中…');
     watchId=navigator.geolocation.watchPosition(
       p=>{ lastLat=p.coords.latitude; lastLng=p.coords.longitude; $('gpsNote').textContent='';   // 精度表示は不要
            if(pendingAutoStart){ pendingAutoStart=false; autoStartTarget(lastLat,lastLng); }
            update(lastLat,lastLng,new Date()); checkFixMsg(lastLat,lastLng); },
-      e=>{ $('gpsNote').textContent='位置情報エラー: '+e.message; },
+      e=>{ $('gpsNote').textContent=T('位置情報エラー: ')+e.message; },
       { enableHighAccuracy:true, maximumAge:1000, timeout:15000 });
-    $('startBtn').textContent='停止';
+    $('startBtn').textContent=T('停止');
   }
-  function stopGps(){ if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null; } pendingAutoStart=false; stopDepCountdown(); $('correctBtn').classList.remove('blink'); $('startBtn').textContent='開始'; }
+  function stopGps(){ if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null; } pendingAutoStart=false; stopDepCountdown(); $('correctBtn').classList.remove('blink'); $('startBtn').textContent=T('開始'); }
   // ⑥ 開始→確認ポップアップ→確認で開始 / ⑫ 停止で補正保存
-  function beginRun(){ pendingAutoStart=true; stillPos=null; preEarlyWarnedIdx=-1; runStartAt=Date.now(); $('correctBtn').classList.remove('blink'); speak('ドラサポを開始します。キバリンショロー、ご安全に！'); startGps(); }
+  function beginRun(){
+    pendingAutoStart=true; stillPos=null; preEarlyWarnedIdx=-1; runStartAt=Date.now();
+    $('correctBtn').classList.remove('blink');
+    speakOpening();
+    if(mode==='demo'){ pendingAutoStart=false; demoStart(); } else { startGps(); }
+  }
   function showConfirm(){
     if(!course){ beginRun(); return; }
     $('cfCheck').checked=false; $('cfOk').disabled=true;   // ① 毎回チェックし直し
-    $('cfHead').textContent = `ダイヤ ${zdia(currentDiaNo)} ・ ${dayType===1?'平日':'土日祝'}`;
-    $('cfDest').textContent = `この便は「${course.end_place||'—'}」行きです`;
+    $('cfHead').textContent = T('ダイヤ {no} ・ {type}',{no:zdia(currentDiaNo),type:T(dayType===1?'平日':'土日祝')});
+    $('cfDest').textContent = T('この便は「{dest}」行きです',{dest:course.end_place||'—'});
     $('cfRows').innerHTML =
-      `<div class="d-row"><span class="d-k">始発時刻</span><span class="d-v">${(course.departure_time||'--:--').replace(/^0/,'')}</span></div>`+
-      `<div class="d-row"><span class="d-k">ダイヤ番号</span><span class="d-v">${zdia(currentDiaNo)}</span></div>`+
-      `<div class="d-row"><span class="d-k">タッチ番号</span><span class="d-v">${course.touch_no||'—'}</span></div>`+
-      (course.digital_no?`<div class="d-row"><span class="d-k">デジタル番号</span><span class="d-v">${course.digital_no}</span></div>`:'');
+      `<div class="d-row"><span class="d-k">${T('始発時刻')}</span><span class="d-v">${(course.departure_time||'--:--').replace(/^0/,'')}</span></div>`+
+      `<div class="d-row"><span class="d-k">${T('ダイヤ番号')}</span><span class="d-v">${zdia(currentDiaNo)}</span></div>`+
+      `<div class="d-row"><span class="d-k">${T('タッチ番号')}</span><span class="d-v">${course.touch_no||'—'}</span></div>`+
+      (course.digital_no?`<div class="d-row"><span class="d-k">${T('デジタル番号')}</span><span class="d-v">${course.digital_no}</span></div>`:'');
     $('confirmOverlay').classList.add('show');
   }
   $('cfCheck').addEventListener('change', ()=>{ $('cfOk').disabled = !$('cfCheck').checked; });   // ① チェックで開始可
@@ -1011,9 +1313,9 @@
     try{
       const r=await fetch(`${API_BASE}update_busstops.php`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({secret:CORRECT_SECRET, fixes})});
       const j=await r.json().catch(()=>({}));
-      if(r.ok && j.updated!=null){ ids.forEach(id=> corrections[id].saved=true); toast(`座標を ${j.updated} 件 保存しました`); updateRail(); return true; }
-      toast('座標保存に失敗: '+((j&&j.error)||('HTTP '+r.status)));
-    }catch(e){ toast('座標保存の通信に失敗しました'); }
+      if(r.ok && j.updated!=null){ ids.forEach(id=> corrections[id].saved=true); toast(T('座標を {n} 件 保存しました',{n:j.updated})); updateRail(); return true; }
+      toast(T('座標保存に失敗: ')+((j&&j.error)||('HTTP '+r.status)));
+    }catch(e){ toast(T('座標保存の通信に失敗しました')); }
     return false;
   }
   // 保存済みの補正を元の座標に戻す(取消)
@@ -1022,156 +1324,197 @@
       const r=await fetch(`${API_BASE}update_busstops.php`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({secret:CORRECT_SECRET, fixes:[{busstop_id:+id, lat:origLat, lng:origLng}]})});
       const j=await r.json().catch(()=>({}));
       if(r.ok && j.updated!=null) return true;
-      toast('取消の保存に失敗: '+((j&&j.error)||('HTTP '+r.status)));
-    }catch(e){ toast('取消の通信に失敗しました'); }
+      toast(T('取消の保存に失敗: ')+((j&&j.error)||('HTTP '+r.status)));
+    }catch(e){ toast(T('取消の通信に失敗しました')); }
     return false;
   }
-  function stopRun(){ flushCorrections(); stopGps(); }
+  function stopRun(){ flushCorrections(); if(mode==='demo') demoStop(); else stopGps(); }
+  function isRunning(){ return mode==='demo' ? demoRunning() : watchId!==null; }
   $('startBtn').addEventListener('click', ()=>{
     primeAudio();
-    if(mode==='gps'){
-      if(watchId===null){ showConfirm(); }   // ⑥ 確認ポップアップ
-      else stopRun();                          // ⑫ 停止時に補正をDBへ
-    } else { runDemo(); }
+    if(isRunning()) stopRun(); else showConfirm();   // ⑥ 確認ポップアップ → 開始
   });
   // ⑫ 補正: 現在地を対象バス停の新座標として一時取得。補正済みの停で再度押すと取消
-  function refreshDisp(stop){ if(mode==='demo') runDemo(); else if(lastLat!=null) update(lastLat,lastLng,new Date()); else setTargetName(dispName(stop)); updateRail(); }
+  function refreshDisp(stop){
+    if(demoRunning()) demoTick();
+    else if(lastLat!=null) update(lastLat,lastLng,new Date(nowMs()));
+    else setTargetName(dispName(stop));
+    updateRail();
+  }
   $('correctBtn').addEventListener('click', ()=>{
-    const stop=stops[targetIndex]; if(!stop){ toast('対象バス停がありません'); return; }
+    const stop=stops[targetIndex]; if(!stop){ toast(T('対象バス停がありません')); return; }
     const cur=corrections[stop.busstop_id];
     if(cur){   // 補正済み → 取消(元の座標に戻す。保存済みならDBも元に戻す)
-      if(confirm(`「${stop.name}」の補正を取り消しますか？`)){
+      if(confirm(T('「{name}」の補正を取り消しますか？',{name:stop.name}))){
         const wasSaved=!!cur.saved;
         stop.lat=cur.origLat; stop.lng=cur.origLng; delete corrections[stop.busstop_id];
         if(wasSaved){
           revertCorrection(stop.busstop_id, cur.origLat, cur.origLng)
-            .then(ok=> toast(ok?`「${stop.name}」の補正を取り消しました`:`取消をDBに反映できませんでした`));
-        } else { toast(`「${stop.name}」の補正を取り消しました`); }
+            .then(ok=> toast(ok?T('「{name}」の補正を取り消しました',{name:stop.name}):T('取消をDBに反映できませんでした')));
+        } else { toast(T('「{name}」の補正を取り消しました',{name:stop.name})); }
         refreshDisp(stop);
       }
       return;
     }
-    if(!navigator.geolocation){ toast('この端末はGPS非対応'); return; }
-    toast('現在地を取得中…');
+    if(!navigator.geolocation){ toast(T('この端末はGPS非対応')); return; }
+    toast(T('現在地を取得中…'));
     navigator.geolocation.getCurrentPosition(p=>{
       const lat=p.coords.latitude, lng=p.coords.longitude, acc=p.coords.accuracy;
-      if(acc>CORRECT_MAX_ACC){ toast(`GPS精度が低いため補正できません（±${Math.round(acc)}m・${CORRECT_MAX_ACC}m以内で実施）`); return; }   // 精度ガード
+      if(acc>CORRECT_MAX_ACC){ toast(T('GPS精度が低いため補正できません（±{acc}m・{max}m以内で実施）',{acc:Math.round(acc),max:CORRECT_MAX_ACC})); return; }   // 精度ガード
       corrections[stop.busstop_id]={lat,lng, origLat:stop.lat, origLng:stop.lng, saved:false};   // 元座標も保持
       stop.lat=lat; stop.lng=lng;
       refreshDisp(stop);
       // ③ 終点到着後は運行が終了していて保存の機会が無いため、その場でDBへ保存する
       if(watchId===null){ flushCorrections(); }
-      else { toast(`「${stop.name}」を補正しました・停止時に保存(もう一度押すと取消)`); }
-    }, e=> toast('現在地取得に失敗: '+e.message), {enableHighAccuracy:true, timeout:15000, maximumAge:0});
+      else { toast(T('「{name}」を補正しました・停止時に保存(もう一度押すと取消)',{name:stop.name})); }
+    }, e=> toast(T('現在地取得に失敗: ')+e.message), {enableHighAccuracy:true, timeout:15000, maximumAge:0});
   });
 
   // ---- 手動で対象バス停を前/次へ(⑥) ----
   function refreshAfterNav(){
-    if(mode==='demo') return runDemo();
-    if(lastLat!=null) return update(lastLat,lastLng,new Date());
+    if(demoRunning()) return demoTick();
+    if(lastLat!=null) return update(lastLat,lastLng,new Date(nowMs()));
     const s=stops[targetIndex]; if(s){ setTargetName(dispName(s)); setEta(hhmm(s)); }
-    const nxt=stops[targetIndex+1]; setNextPrev(nxt?`次々は ${nxt.name}（${hhmm(nxt)}）`:'次は 終点');
+    const nxt=stops[targetIndex+1]; setNextPrev(nxt?T('次々は {name}（{time}）',{name:nxt.name,time:hhmm(nxt)}):T('次は 終点'));
     updateRail();
   }
   $('prevBtn').addEventListener('click', ()=>{ if(targetIndex>0){ targetIndex--; lastAtStopIndex=-1; terminalAnnounced=false; refreshAfterNav(); } });
   $('nextBtn').addEventListener('click', ()=>{ if(targetIndex<stops.length-1){ targetIndex++; lastAtStopIndex=-1; terminalAnnounced=false; refreshAfterNav(); } });
 
-  // ---- デモ(GPSなしで早発/正常を確認) ----
-  $('modeBtn').addEventListener('click', ()=>{
-    primeAudio();
-    mode = mode==='gps' ? 'demo' : 'gps';
-    $('modeBtn').textContent = mode==='demo' ? '実GPS' : 'デモ';
-    $('simRow').style.display = mode==='demo' ? 'flex' : 'none';
-    if(mode==='demo'){ stopGps(); $('startBtn').textContent='デモ反映'; runDemo(); }
-    else { liveStop(); $('startBtn').textContent='開始'; }
-  });
-  $('simStop').addEventListener('input', ()=>{
-    targetIndex=+$('simStop').value; lastAtStopIndex=-1;
-    if(liveRunning()){ liveWall0=Date.now(); liveSched0=schedDate(stops[targetIndex]).getTime(); liveSpokenIdx=-1; liveArrivedIdx=-1; liveTick(); }
-    else runDemo();
-  });
-  $('simOff').addEventListener('click', ()=>{
-    // 早発 → 正常 → 5.5分遅れ(黄) → 11分遅れ(橙) → 早発…
-    simOffset = simOffset===-30 ? 15 : (simOffset===15 ? 330 : (simOffset===330 ? 660 : -30));
-    $('simOff').textContent = simOffset<0 ? `早発${simOffset}s`
-      : (simOffset>=600 ? '遅れ+11分(橙)' : (simOffset>=300 ? '遅れ+5.5分(黄)' : `遅れ+${simOffset}s`));
-    if(liveRunning()){ liveReanchor(); liveArrivedIdx=-1; liveTick(); }   // ⑦ ライブ中もバイアスを即反映
-    else runDemo();
-  });
-  function runDemo(){
-    if(!stops.length) return;
-    const stop=stops[targetIndex]; if(!stop) return;
-    // 対象停に居ることにし、現在時刻=定刻+オフセット と仮定
-    const fakeNow=new Date(schedDate(stop).getTime() + simOffset*1000);
-    lastAtStopIndex=targetIndex; lastLat=stop.lat; lastLng=stop.lng; // 半径内扱い
-    render(evaluate(stop.lat, stop.lng, fakeNow));
-  }
+  /* ---- デモ(仮想GPS) --------------------------------------------------
+     GPSの代わりに、計算で作った現在地と時刻を本体に流し込む。
+     判定・警告・カウントダウンは実GPSとまったく同じ経路を通る。
 
-  // ---- ⑦ ライブ運行デモ: 実時間(×倍速)で自動進行。到着時に下段の早発/遅れバイアスを反映して画面を再現 ----
-  const LIVE_DWELL_MS = 3500;   // 各停の「到着表示」を実時間で保持する長さ
-  let liveTimer=null, liveWall0=0, liveSched0=0, liveSpeed=20, liveSpokenIdx=-1;
-  let liveArrivedIdx=-1, liveDwellEnd=0;
-  function liveRunning(){ return liveTimer!==null; }
-  // 仮想の現在時刻(ms)
-  function liveEffNow(){ return liveSched0 + (Date.now()-liveWall0)*liveSpeed; }
-  // 実時刻を保ったまま基準を取り直す(速度/バイアス変更・スライダー操作時)
-  function liveReanchor(){ const e=liveEffNow(); liveWall0=Date.now(); liveSched0=e; }
-  function liveStart(){
-    if(!stops.length){ toast('停留所データがありません'); return; }
-    liveSpeed = parseInt($('liveSpeed').value,10)||1;
-    liveWall0 = Date.now();
-    liveSched0 = schedDate(stops[targetIndex]).getTime();   // 現在の対象停の定刻＝いま、を起点に運行開始
-    liveSpokenIdx = -1; liveArrivedIdx = -1;
-    liveTimer = setInterval(liveTick, 250);
-    $('liveBtn').textContent='■ 停止'; $('liveBtn').classList.add('on');
-    primeAudio(); liveTick();
-  }
-  function liveStop(){ if(liveTimer){ clearInterval(liveTimer); liveTimer=null; } const b=$('liveBtn'); if(b){ b.textContent='▶ ライブ運行'; b.classList.remove('on'); } }
-  function liveTick(){
-    const now=Date.now();
-    const effNow=liveEffNow();
-    const stop=stops[targetIndex];
-    const schedT=schedDate(stop).getTime();
-    const arriveT=schedT + simOffset*1000;    // このバスが実際に到着する仮想時刻(=定刻+バイアス)
-    const isLast=targetIndex===stops.length-1;
-    $('simStop').value=String(targetIndex);
+     ・デモ時計は、開始した時点でコースの発時刻に合わせる
+     ・区間の所要時間はダイヤの定刻どおり(=40km/h相当)。
+       50km/hなら0.8倍の時間で走る(早着)、30km/hなら1.33倍かかる(遅延)
+     ・⏸停車 の間は進まない。時計は進むので、早着したぶんを待てる
+     -------------------------------------------------------------------- */
+  const DEMO_BASE_KMH = 40;        // ダイヤどおりに走る速度
+  const DEMO_DWELL_MS = 20000;     // 各停での停車時間(デモ時間)。倍速でも停留所を飛ばさないために要る
+  const DEMO_PRE_MS   = 70000;     // 始発地では発時刻の1分10秒前から始める(1分前の案内とカウントダウンを聞くため)
+  let demoTimer=null, demoClock=0, demoLastWall=0;
+  let demoIdx=0, demoElapsed=0, demoDwell=0;   // 区間/その区間での経過/停車の残り(デモms)
+  let demoKmh=40, demoAccel=10, demoHold=false;
 
-    // まだ到着していない → 走行中(定刻との差をカウント)
-    if(liveArrivedIdx!==targetIndex && effNow < arriveT){
-      if(liveSpokenIdx!==targetIndex){ liveSpokenIdx=targetIndex; speakStop((isLast?'次は終点、':'次は、')+yomi(stop)+'です'); }
-      render({state:'approaching', stop, remainingSec:(schedT-effNow)/1000, d:null});
-      return;
-    }
-    // 到着 → 到着表示(dwell)。定刻との差は -バイアス で固定表示
-    if(liveArrivedIdx!==targetIndex){ liveArrivedIdx=targetIndex; liveDwellEnd=now+LIVE_DWELL_MS; }
-    const remAt=(schedT-arriveT)/1000;         // = -simOffset
-    let state;
-    if(isLast) state='terminal';
-    else if(targetIndex===0 && remAt>EARLY_GRACE) state='waiting';   // 始発を早発バイアスで待機表示
-    else state = remAt>EARLY_GRACE ? 'early' : 'ok';                 // 早発 or 正常/遅れ
-    render({state, stop, remainingSec:remAt, d:0});
-    if(isLast){ liveStop(); return; }                                // 終点で自動停止
-    if(now>=liveDwellEnd){                                           // dwell終了 → 出発して次停へ
-      targetIndex++; liveArrivedIdx=-1; liveSpokenIdx=-1;
-      liveWall0=now; liveSched0=arriveT;                            // 出発時刻(=到着時刻)から仮想時計を継続
+  function demoRunning(){ return demoTimer!==null; }
+  function nowMs(){ return demoRunning() ? demoClock : Date.now(); }
+  function schedMs(i){ const s=stops[i]; return s ? schedDate(s).getTime() : 0; }
+  // 区間iの所要時間(ms)。定刻の所要を基準にして、速度の比で伸び縮みさせる
+  function segDur(i){
+    const d = schedMs(i+1) - schedMs(i);
+    return Math.max(1000, d) * (DEMO_BASE_KMH / demoKmh);
+  }
+  // 実際に走っている時間。停車ぶんを引く(停車は定刻の所要に含まれているため)
+  function travelDur(i){ return Math.max(1000, segDur(i) - DEMO_DWELL_MS); }
+  // いまのバスの位置(停留所間を直線で補間)
+  function demoPos(){
+    const a=stops[demoIdx], b=stops[demoIdx+1];
+    if(!a) return null;
+    if(!b || a.lat==null || b.lat==null) return (a.lat!=null)?{lat:a.lat,lng:a.lng}:null;
+    const f=Math.max(0,Math.min(1, demoElapsed/travelDur(demoIdx)));
+    return { lat:a.lat+(b.lat-a.lat)*f, lng:a.lng+(b.lng-a.lng)*f };
+  }
+  function demoStart(){
+    if(!stops.length){ toast(T('停留所データがありません')); return; }
+    demoIdx = Math.max(0, Math.min(targetIndex, stops.length-1));
+    const atOrigin = (demoIdx===0);
+    demoElapsed = 0; demoHold = false;
+    // 始発地なら発時刻の少し前から。その間は停車させ、定刻ちょうどに発車させる
+    demoDwell = atOrigin ? DEMO_PRE_MS : DEMO_DWELL_MS;
+    demoClock = schedMs(demoIdx) - (atOrigin ? DEMO_PRE_MS : 0);
+    demoLastWall = Date.now();
+    demoAccel = parseInt($('demoAccel').value,10)||1;
+    updateHoldBtn();
+    demoTimer = setInterval(demoTick, 200);
+    $('startBtn').textContent=T('停止');
+    if(atOrigin) startDepCountdown();      // 1分前の案内と10秒からのカウントダウン
+    demoTick();
+  }
+  function demoStop(){
+    if(demoTimer){ clearInterval(demoTimer); demoTimer=null; }
+    stopDepCountdown();
+    $('startBtn').textContent=T('開始');
+  }
+  function demoTick(){
+    const wall=Date.now();
+    const dt=(wall-demoLastWall)*demoAccel;   // 進んだデモ時間(ms)
+    demoLastWall=wall;
+    demoClock += dt;
+    if(!demoHold) demoAdvance(dt);
+    const p=demoPos();
+    if(p){ lastLat=p.lat; lastLng=p.lng; update(p.lat,p.lng,new Date(demoClock)); }
+    renderDemoBar();
+  }
+  // 経過ぶんだけ進める。停留所に着いたらそこで少し停まる(飛び越さないため)
+  function demoAdvance(dt){
+    let guard=0;
+    while(dt>0 && guard++<500){
+      if(demoDwell>0){ const u=Math.min(dt,demoDwell); demoDwell-=u; dt-=u; continue; }
+      if(demoIdx >= stops.length-1){ demoElapsed=0; return; }      // 終点
+      const need=travelDur(demoIdx)-demoElapsed;
+      if(dt < need){ demoElapsed+=dt; return; }
+      dt-=need; demoIdx++; demoElapsed=0;
+      if(demoIdx < stops.length-1) demoDwell=DEMO_DWELL_MS;        // 次の停留所で停車
     }
   }
-  $('liveBtn').addEventListener('click', ()=>{ if(liveRunning()) liveStop(); else liveStart(); });
-  $('liveSpeed').addEventListener('change', ()=>{ if(liveRunning()){ liveReanchor(); liveSpeed=parseInt($('liveSpeed').value,10)||1; } });
+  function renderDemoBar(){
+    const d=new Date(demoClock);
+    const two=n=>String(n).padStart(2,'0');
+    $('demoClock').textContent=`${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
+    const s=stops[targetIndex];
+    const el=$('demoDiff'); el.className='demo-diff';
+    if(!s){ el.textContent=''; return; }
+    const diff=Math.round((demoClock - schedMs(targetIndex))/1000);   // +遅れ / −早発
+    const m=Math.floor(Math.abs(diff)/60), ss=Math.abs(diff)%60;
+    const amt = m ? T('{m}分{s}秒',{m:m,s:two(ss)}) : T('{s}秒',{s:ss});
+    el.textContent = T('定刻 {time} / ',{time:hhmm(s)}) + (diff===0 ? T('ちょうど') : (diff<0 ? T('{amt} 早い',{amt}) : T('{amt} 遅い',{amt})));
+    if(diff<=-10) el.classList.add('early'); else if(diff>=60) el.classList.add('late');
+  }
+  function updateHoldBtn(){
+    const b=$('demoHoldBtn'); if(!b) return;
+    b.textContent = T(demoHold ? '▶ 発車' : '⏸ 停車');
+    b.classList.toggle('on', demoHold);
+  }
+  $('demoHoldBtn').addEventListener('click', ()=>{ demoHold=!demoHold; updateHoldBtn(); if(demoRunning()) demoTick(); });
+  $('demoAccel').addEventListener('change', ()=>{ demoAccel=parseInt($('demoAccel').value,10)||1; demoLastWall=Date.now(); });
+  document.querySelectorAll('.spd').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      document.querySelectorAll('.spd').forEach(x=>x.classList.toggle('on', x===b));
+      demoKmh=parseInt(b.dataset.kmh,10)||40;
+      // 速度を変えても、いま走っている位置は動かさない(経過の割合を保つ)
+      if(demoRunning() && demoIdx<stops.length-1){
+        const f=Math.max(0,Math.min(1, demoElapsed/travelDur(demoIdx)));
+        demoElapsed = f*travelDur(demoIdx);
+        demoTick();
+      }
+    });
+  });
+
+  // 設定画面の 実GPS / デモ 切替
+  function setMode(m){
+    mode=m; lsSet('mon_mode', m);
+    $('mdGps').classList.toggle('active', m==='gps');
+    $('mdDemo').classList.toggle('active', m==='demo');
+    $('demoRow').style.display = (m==='demo') ? 'flex' : 'none';
+  }
+  $('mdGps').addEventListener('click', ()=>{ if(demoRunning()) demoStop(); setMode('gps'); });
+  $('mdDemo').addEventListener('click', ()=>{ stopGps(); setMode('demo'); });
+  setMode(lsGet('mon_mode')==='demo' ? 'demo' : 'gps');
 
   // ---- ③ 音量(大/中/小/消 の4段) ----
-  function updateVolBtn(){ $('volBtn').textContent = VOL_LABEL[volLevel]; }
+  function updateVolBtn(){ $('volBtn').textContent = T(VOL_LABEL[volLevel]); }
   $('volBtn').addEventListener('click', ()=>{
     volLevel=(volLevel+1)%4; lsSet('mon_vol',String(volLevel)); updateVolBtn();
-    if(VOL[volLevel]>0){ primeAudio(); speak('音量'+['大','中','小'][volLevel]); }
+    if(VOL[volLevel]>0){ primeAudio(); speak(T('音量'+['大','中','小'][volLevel])); }
   });
   updateVolBtn();
 
   // ---- バス停名の読み上げ ON/OFF ----
-  function updateNameBtn(){ const b=$('nameBtn'); b.textContent=(nameSpeech?'🗣':'🔇')+'停名'; b.classList.toggle('off',!nameSpeech); }
+  function updateNameBtn(){ const b=$('nameBtn'); b.textContent=T((nameSpeech?'🗣':'🔇')+'停名'); b.classList.toggle('off',!nameSpeech); }
   $('nameBtn').addEventListener('click', ()=>{
     nameSpeech=!nameSpeech; lsSet('mon_name_speech', nameSpeech?'1':'0'); updateNameBtn();
-    if(nameSpeech){ primeAudio(); speak('停留所名の読み上げオン'); }
+    if(nameSpeech){ primeAudio(); speak(T('停留所名の読み上げオン')); }
   });
   updateNameBtn();
 
@@ -1181,7 +1524,7 @@
     for(let m=5;m<=60;m+=5){ const o=document.createElement('option'); o.value=m; o.textContent=m+' m'; if(m===STOP_RADIUS_M) o.selected=true; r.appendChild(o); }
     r.addEventListener('change', ()=>{
       STOP_RADIUS_M=parseInt(r.value,10); lsSet('mon_radius',String(STOP_RADIUS_M));
-      if(mode==='demo') runDemo();
+      if(demoRunning()) demoTick();
     });
   })();
 
@@ -1238,6 +1581,9 @@
   if('serviceWorker' in navigator && location.protocol==='https:'){
     window.addEventListener('load', ()=> navigator.serviceWorker.register('./sw.js').catch(()=>{}));
   }
+  scanStaticTexts();
+  $('langBtn').addEventListener('click', toggleLang);
+  applyLang();
 })();
 </script>
 </body>

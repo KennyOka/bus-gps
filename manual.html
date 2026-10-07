@@ -141,13 +141,24 @@
     nav, .screen{ box-shadow:none; }
     h2.sec{ break-before:page; }
   }
+  /* 日本語 / English の切り替え */
+  html[data-lang="ja"] [lang="en"]{ display:none !important; }
+  html[data-lang="en"] [lang="ja"]{ display:none !important; }
+  .lang-btn{ position:absolute; top:14px; right:16px; z-index:5;
+    background:rgba(255,255,255,.18); color:#fff; border:1px solid rgba(255,255,255,.5);
+    border-radius:8px; padding:7px 14px; font-size:14px; font-weight:800; cursor:pointer; }
+  @media print{ .lang-btn{ display:none; } }
 </style>
 
 <header>
+  <button class="lang-btn" id="langBtn" type="button">EN</button>
   <div class="inner">
-    <div class="eyebrow">しまバス ドライバーズサポート</div>
-    <h1>ドラサポ かんたん操作ガイド</h1>
-    <p>はじめての方でも、この順番どおりに押せば使えます。</p>
+    <div class="eyebrow" lang="ja">しまバス ドライバーズサポート</div>
+    <div class="eyebrow" lang="en">Shimabus Driver Support</div>
+    <h1 lang="ja">ドラサポ かんたん操作ガイド</h1>
+    <h1 lang="en">DoraSapo Quick Guide</h1>
+    <p lang="ja">はじめての方でも、この順番どおりに押せば使えます。</p>
+    <p lang="en">Even if this is your first time, just follow these steps in order.</p>
     <a class="back-btn" id="backTop" href="./bus_monitor.html">← ドラサポにもどる</a>
   </div>
 </header>
@@ -155,7 +166,7 @@
 
 <div class="wrap">
 
-<nav>
+<nav lang="ja">
   <h2>もくじ</h2>
   <ol>
     <li><a href="#start">アプリを開く</a></li>
@@ -171,9 +182,27 @@
     <li><a href="#trouble">困ったときは</a></li>
   </ol>
 </nav>
+<nav lang="en">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#start">Opening the app</a></li>
+    <li><a href="#select">Choosing the schedule and course</a></li>
+    <li><a href="#confirm">Checking the destination and starting</a></li>
+    <li><a href="#screen">Reading the screen while driving</a></li>
+    <li><a href="#depart">The departure countdown</a></li>
+    <li><a href="#early">Early-departure warnings</a></li>
+    <li><a href="#buttons">What the bottom buttons do</a></li>
+    <li><a href="#fare">Checking fares and following buses</a></li>
+    <li><a href="#finish">When you reach the last stop</a></li>
+    <li><a href="#fix">Correcting a bus stop position</a></li>
+    <li><a href="#trouble">If something goes wrong</a></li>
+  </ol>
+</nav>
 
-<h2 class="sec" id="start">1. アプリを開く</h2>
-<p>ホーム画面の<strong>ドラサポのアイコン</strong>を押します。最初に青い画面が出たら、<strong>画面のどこでも一度押して</strong>ください。</p>
+<h2 lang="ja" class="sec" id="start">1. アプリを開く</h2>
+<h2 class="sec" id="start" lang="en">1. Opening the app</h2>
+<p lang="ja">ホーム画面の<strong>ドラサポのアイコン</strong>を押します。最初に青い画面が出たら、<strong>画面のどこでも一度押して</strong>ください。</p>
+<p lang="en">Tap the <strong>DoraSapo icon</strong> on your home screen. When the blue screen appears, <strong>tap anywhere on it once</strong>.</p>
 
 <div class="screen">
   <div class="body" style="align-items:center; gap:4px; padding:26px 12px;">
@@ -182,22 +211,33 @@
     <div class="mark" style="margin-top:10px; padding:6px 14px; color:#CFE0F5;">画面をタップしてスタート</div>
   </div>
 </div>
-<p class="cap">▲ ここを一度押すと、次の画面に進みます。</p>
+<p lang="ja" class="cap">▲ ここを一度押すと、次の画面に進みます。</p>
+<p class="cap" lang="en">▲ Tap here once to go to the next screen.</p>
 
-<div class="note tip"><b>アイコンが無いときは</b>
+<div class="note tip" lang="ja"><b>アイコンが無いときは</b>
 ドラサポをブラウザで開いてから、次のようにするとアイコンが作れます。次からはアイコンで開けて、画面も広く使えます。
 <div class="btns"><dl>
   <dt>iPhone・iPad</dt><dd>Safariの下にある「共有ボタン（□に↑）」→「<strong>ホーム画面に追加</strong>」</dd>
   <dt>Android</dt><dd>Chromeの右上にある「⋮（点3つ）」→「<strong>ホーム画面に追加</strong>」（「アプリをインストール」と出ることもあります）</dd>
 </dl></div></div>
+<div class="note tip" lang="en"><b>If there is no icon</b>
+Open DoraSapo in your browser, then add it to the home screen as shown below. After that you can open it from the icon, and you get a bigger screen.
+<div class="btns"><dl>
+  <dt>iPhone / iPad</dt><dd>Share button at the bottom of Safari (□ with ↑) → <strong>Add to Home Screen</strong></dd>
+  <dt>Android</dt><dd>⋮ (three dots) at the top right of Chrome → <strong>Add to Home screen</strong> (it may say “Install app”)</dd>
+</dl></div></div>
 
-<h2 class="sec" id="select">2. ダイヤとコースを選ぶ</h2>
-<p>日付は<strong>今日の日付が自動で入って</strong>います。平日か土日祝かも自動で選ばれます。<strong>祝日のときだけ</strong>「土日祝」を自分で押してください。</p>
+<h2 lang="ja" class="sec" id="select">2. ダイヤとコースを選ぶ</h2>
+<h2 class="sec" id="select" lang="en">2. Choosing the schedule and course</h2>
+<p lang="ja">日付は<strong>今日の日付が自動で入って</strong>います。平日か土日祝かも自動で選ばれます。<strong>祝日のときだけ</strong>「土日祝」を自分で押してください。</p>
+<p lang="en">The date is <strong>filled in automatically with today's date</strong>, and weekday or weekend is chosen for you. <strong>Only on public holidays</strong> do you need to tap “Weekend / holiday” yourself.</p>
 
 <ol class="steps">
   <li>
-    <h3>ダイヤ番号を入れる</h3>
-    <p>数字を入れて、右の<strong>「コース一覧を取得」</strong>を押します。</p>
+    <h3 lang="ja">ダイヤ番号を入れる</h3>
+    <h3 lang="en">Enter the schedule number</h3>
+    <p lang="ja">数字を入れて、右の<strong>「コース一覧を取得」</strong>を押します。</p>
+    <p lang="en">Type the number, then tap <strong>“Load courses”</strong> on the right.</p>
     <div class="screen">
       <div class="bar"><span>🚌 しまバスドラサポ</span><span>7:41</span></div>
       <div class="body">
@@ -210,11 +250,14 @@
         </div>
       </div>
     </div>
-    <p class="cap">▲ ダイヤ番号がわからないときは<strong>「📋 ダイヤ一覧を表示」</strong>を押すと、番号と始発・終着の時刻が一覧で出ます。</p>
+    <p class="cap" lang="ja">▲ ダイヤ番号がわからないときは<strong>「📋 ダイヤ一覧を表示」</strong>を押すと、番号と始発・終着の時刻が一覧で出ます。</p>
+    <p class="cap" lang="en">▲ If you do not know the number, tap <strong>“📋 Show schedule list”</strong> to see every schedule with its first and last departure times.</p>
   </li>
   <li>
-    <h3>これから走るコースを押す</h3>
-    <p>上から順に、その日に走るコースが並んでいます。<strong>これから走るコース</strong>を押してください。コースとコースの間が20分以上あくときは<strong>「休憩◯分」</strong>と出ます。</p>
+    <h3 lang="ja">これから走るコースを押す</h3>
+    <h3 lang="en">Tap the course you are about to drive</h3>
+    <p lang="ja">上から順に、その日に走るコースが並んでいます。<strong>これから走るコース</strong>を押してください。コースとコースの間が20分以上あくときは<strong>「休憩◯分」</strong>と出ます。</p>
+    <p lang="en">The courses for that day are listed in order. Tap <strong>the course you are about to drive</strong>. When there is a gap of 20 minutes or more between courses, the list shows <strong>“Break ◯ min”</strong>.</p>
     <div class="screen">
       <div class="bar"><span>コースを選択</span><span>7:41</span></div>
       <div class="body">
@@ -230,8 +273,10 @@
   </li>
 </ol>
 
-<h2 class="sec" id="confirm">3. 行き先を確認して開始する</h2>
-<p>コースを押すと、確認の画面が出ます。<strong>方向幕を変えたら</strong>、四角いところを押してレ点を付けます。レ点を付けると<strong>「▶ 開始」</strong>が押せるようになります。</p>
+<h2 lang="ja" class="sec" id="confirm">3. 行き先を確認して開始する</h2>
+<h2 class="sec" id="confirm" lang="en">3. Checking the destination and starting</h2>
+<p lang="ja">コースを押すと、確認の画面が出ます。<strong>方向幕を変えたら</strong>、四角いところを押してレ点を付けます。レ点を付けると<strong>「▶ 開始」</strong>が押せるようになります。</p>
+<p lang="en">When you tap a course, a confirmation screen appears. <strong>After you change the destination sign</strong>, tap the box to add a check mark. Once it is checked, <strong>“▶ Start”</strong> becomes available.</p>
 
 <div class="screen">
   <div class="body" style="gap:10px;">
@@ -247,20 +292,32 @@
     <div style="text-align:center; color:#8A91A3; font-size:12px;">キャンセル（コース選択へ）</div>
   </div>
 </div>
-<p class="cap">▲ レ点を付けないと開始できません。方向幕の入れ替え忘れを防ぐためです。</p>
+<p lang="ja" class="cap">▲ レ点を付けないと開始できません。方向幕の入れ替え忘れを防ぐためです。</p>
+<p class="cap" lang="en">▲ You cannot start without the check mark. This is to stop the destination sign being forgotten.</p>
 
-<h3>タッチ番号・デジタル番号を入力する</h3>
-<p>この画面に、そのコースの<strong>タッチ番号</strong>と<strong>デジタル番号</strong>が出ています。発車前に入力してください。</p>
-<div class="btns">
+<h3 lang="ja">タッチ番号・デジタル番号を入力する</h3>
+<h3 lang="en">Entering the touch and digital numbers</h3>
+<p lang="ja">この画面に、そのコースの<strong>タッチ番号</strong>と<strong>デジタル番号</strong>が出ています。発車前に入力してください。</p>
+<p lang="en">This screen shows the <strong>touch number</strong> and <strong>digital number</strong> for the course. Enter them before you depart.</p>
+<div class="btns" lang="ja">
   <dl>
     <dt>タッチ番号</dt><dd>クレジット決済端末に入力します（例：3105）</dd>
     <dt>デジタル番号</dt><dd>デジタル機器に入力します（例：52801）。<strong>画面に出ていないコースでは入力は不要</strong>です。</dd>
   </dl>
 </div>
-<div class="note warn"><b>番号は必ずここで確認</b>同じ路線のコースは同じ番号ですが、<strong>路線が変わると番号も変わります</strong>。前のコースのままにしないよう、開始前にこの画面で確かめてください。</div>
+<div class="btns" lang="en">
+  <dl>
+    <dt>Touch number</dt><dd>Enter it into the card payment terminal (example: 3105)</dd>
+    <dt>Digital number</dt><dd>Enter it into the digital unit (example: 52801). <strong>If the course does not show one, nothing needs to be entered.</strong></dd>
+  </dl>
+</div>
+<div lang="ja" class="note warn"><b>番号は必ずここで確認</b>同じ路線のコースは同じ番号ですが、<strong>路線が変わると番号も変わります</strong>。前のコースのままにしないよう、開始前にこの画面で確かめてください。</div>
+<div class="note warn" lang="en"><b>Always check the numbers here</b>Courses on the same route share the same numbers, but <strong>the numbers change when the route changes</strong>. Check this screen before you start so the previous course's numbers are not left in.</div>
 
-<h2 class="sec" id="screen">4. 運行中の画面の見かた</h2>
-<p>上から順に、いま何を見ればよいかを説明します。</p>
+<h2 lang="ja" class="sec" id="screen">4. 運行中の画面の見かた</h2>
+<h2 class="sec" id="screen" lang="en">4. Reading the screen while driving</h2>
+<p lang="ja">上から順に、いま何を見ればよいかを説明します。</p>
+<p lang="en">Here is what each part of the screen tells you, from top to bottom.</p>
 
 <div class="screen">
   <div class="body" style="gap:10px;">
@@ -277,7 +334,7 @@
   </div>
 </div>
 
-<div class="btns">
+<div class="btns" lang="ja">
   <dl>
     <dt>いちばん上</dt><dd>このコースの<strong>始発地と時刻 → 終着地と時刻</strong></dd>
     <dt>丸い札</dt><dd>いまの状態（正常運行・遅れ・早発注意 など）</dd>
@@ -286,9 +343,19 @@
     <dt>いちばん下</dt><dd><strong>その次</strong>のバス停と時刻</dd>
   </dl>
 </div>
+<div class="btns" lang="en">
+  <dl>
+    <dt>Top line</dt><dd>This course's <strong>origin and time → destination and time</strong></dd>
+    <dt>Round badge</dt><dd>The current state (on schedule, late, too early, and so on)</dd>
+    <dt>Large text</dt><dd><strong>The name of the next stop</strong> and its <strong>scheduled time</strong> (hour and minute on the right)</dd>
+    <dt>Below that</dt><dd><strong>How many metres</strong> remain to that stop</dd>
+    <dt>Bottom line</dt><dd><strong>The stop after next</strong> and its time</dd>
+  </dl>
+</div>
 
-<h3>状態の表示</h3>
-<table class="states">
+<h3 lang="ja">状態の表示</h3>
+<h3 lang="en">State badges</h3>
+<table class="states" lang="ja">
   <tr><th>表示</th><th>意味</th></tr>
   <tr><td><span class="pill ok">✅ 正常運行</span></td><td>遅れは3分未満。数字は出ません。<strong>そのままでOK</strong>です。</td></tr>
   <tr><td><span class="pill y">ちょい遅れ！</span></td><td>3分以上6分未満の遅れ</td></tr>
@@ -296,46 +363,84 @@
   <tr><td><span class="pill r">大幅遅延！</span></td><td>10分以上の遅れ（赤で表示）</td></tr>
   <tr><td><span class="pill e">🚨 早発注意</span></td><td>定刻より早い。<strong>画面が赤く点滅</strong>します。</td></tr>
 </table>
-<p class="note tip"><b>遅れは気にしすぎなくて大丈夫</b>ドラサポは<strong>早発を防ぐため</strong>のものです。遅れは表示するだけで、警告音は鳴りません。</p>
+<table class="states" lang="en">
+  <tr><th>Badge</th><th>Meaning</th></tr>
+  <tr><td><span class="pill ok">✅ On schedule</span></td><td>Less than 3 minutes late. No number is shown. <strong>Nothing to do.</strong></td></tr>
+  <tr><td><span class="pill y">Slightly late</span></td><td>3 to 6 minutes late</td></tr>
+  <tr><td><span class="pill o">Quite late</span></td><td>6 to 10 minutes late</td></tr>
+  <tr><td><span class="pill r">Very late</span></td><td>10 minutes or more (shown in red)</td></tr>
+  <tr><td><span class="pill e">🚨 Too early</span></td><td>Ahead of the scheduled time. <strong>The screen flashes red.</strong></td></tr>
+</table>
+<p lang="ja" class="note tip"><b>遅れは気にしすぎなくて大丈夫</b>ドラサポは<strong>早発を防ぐため</strong>のものです。遅れは表示するだけで、警告音は鳴りません。</p>
+<p class="note tip" lang="en"><b>Do not worry too much about being late</b>DoraSapo exists <strong>to prevent early departures</strong>. Lateness is only displayed; no warning sound is played.</p>
 
-<h2 class="sec" id="depart">5. 始発の発車カウントダウン</h2>
-<p>始発のバス停で「開始」を押すと、発車時刻までを知らせます。</p>
-<div class="btns">
+<h2 lang="ja" class="sec" id="depart">5. 始発の発車カウントダウン</h2>
+<h2 class="sec" id="depart" lang="en">5. The departure countdown</h2>
+<p lang="ja">始発のバス停で「開始」を押すと、発車時刻までを知らせます。</p>
+<p lang="en">When you tap “Start” at the first stop, the app counts down to the departure time.</p>
+<div class="btns" lang="ja">
   <dl>
     <dt>1分前</dt><dd>「定刻1分前です」と声でお知らせ</dd>
     <dt>残り10秒</dt><dd>画面いっぱいに <strong>10・9・8…</strong> と数字が出ます</dd>
     <dt>0秒</dt><dd>「定刻です」と声でお知らせ。ここから発車です。</dd>
   </dl>
 </div>
-<p>始発ではないバス停で開始したときは、カウントダウンは出ません。かわりに<strong>いまいる場所にいちばん近いバス停</strong>から自動で始まります。</p>
+<div class="btns" lang="en">
+  <dl>
+    <dt>1 minute before</dt><dd>You hear “One minute until departure.”</dd>
+    <dt>Last 10 seconds</dt><dd><strong>10, 9, 8…</strong> fills the screen</dd>
+    <dt>0 seconds</dt><dd>You hear “It's time to depart.” You may leave now.</dd>
+  </dl>
+</div>
+<p lang="ja">始発ではないバス停で開始したときは、カウントダウンは出ません。かわりに<strong>いまいる場所にいちばん近いバス停</strong>から自動で始まります。</p>
+<p lang="en">If you start somewhere other than the first stop, there is no countdown. Instead the app begins from <strong>the stop nearest to where you are</strong>.</p>
 
-<h2 class="sec" id="early">6. 早発の知らせ</h2>
-<div class="note alert"><b>バス停の100m手前</b>定刻より30秒以上早いと「<strong>早発に注意してください</strong>」と声が出て、画面が3回光ります。</div>
-<div class="note alert"><b>バス停に着いたとき</b>定刻より早いと「<strong>早発です</strong>」と声が出て、画面が赤く点滅します。定刻になるまでお待ちください。</div>
+<h2 lang="ja" class="sec" id="early">6. 早発の知らせ</h2>
+<h2 class="sec" id="early" lang="en">6. Early-departure warnings</h2>
+<div lang="ja" class="note alert"><b>バス停の100m手前</b>定刻より30秒以上早いと「<strong>早発に注意してください</strong>」と声が出て、画面が3回光ります。</div>
+<div class="note alert" lang="en"><b>100 m before the stop</b>If you are 30 seconds or more ahead of schedule, you hear “<strong>Careful. Don't leave early.</strong>” and the screen flashes three times.</div>
+<div lang="ja" class="note alert"><b>バス停に着いたとき</b>定刻より早いと「<strong>早発です</strong>」と声が出て、画面が赤く点滅します。定刻になるまでお待ちください。</div>
+<div class="note alert" lang="en"><b>When you reach the stop</b>If you are ahead of schedule you hear “<strong>You're too early.</strong>” and the screen flashes red. Please wait until the scheduled time.</div>
 
-<h2 class="sec" id="buttons">7. 下のボタンの意味</h2>
+<h2 lang="ja" class="sec" id="buttons">7. 下のボタンの意味</h2>
+<h2 class="sec" id="buttons" lang="en">7. What the bottom buttons do</h2>
 <div class="screen">
   <div class="body">
     <div class="row"><div class="btn">コース</div><div class="btn dark">開始</div><div class="btn">◀前停</div><div class="btn">次停▶</div></div>
-    <div class="row"><div class="btn">デモ</div><div class="btn">20 m</div><div class="btn">🔊大</div><div class="btn">🗣停名</div><div class="btn red">📍補正</div></div>
+    <div class="row"><div class="btn">EN</div><div class="btn">20 m</div><div class="btn">🔊大</div><div class="btn">🗣停名</div><div class="btn red">📍補正</div></div>
   </div>
 </div>
-<div class="btns">
+<div class="btns" lang="ja">
   <dl>
     <dt>コース</dt><dd>コースを選びなおす画面に戻ります</dd>
     <dt>開始／停止</dt><dd>運行の開始と終了。押すと文字が変わります</dd>
     <dt>◀前停・次停▶</dt><dd>対象のバス停がずれたとき、手動で前後に直します</dd>
-    <dt>デモ</dt><dd>練習用。実際の運行では使いません</dd>
+    <dt>EN／日本語</dt><dd>画面と読み上げを英語／日本語に切り替えます。走行中でも押せます</dd>
     <dt>20 m</dt><dd>バス停に着いたと判断する範囲。ふだんは20mのままで結構です</dd>
     <dt>🔊大</dt><dd>音の大きさ（大・中・小・消）。押すたびに変わります</dd>
     <dt>🗣停名</dt><dd>「次は◯◯です」の読み上げの入切。切っても早発の警告は鳴ります</dd>
     <dt>📍補正</dt><dd>バス停の位置を直します（<a href="#fix">10番</a>を参照）</dd>
   </dl>
 </div>
+<div class="btns" lang="en">
+  <dl>
+    <dt>Courses</dt><dd>Goes back to the course list so you can pick again</dd>
+    <dt>Start / Stop</dt><dd>Begins and ends the run. The label changes as you tap it</dd>
+    <dt>◀ Prev / Next ▶</dt><dd>Moves the target stop back or forward by hand if it is out of step</dd>
+    <dt>EN / 日本語</dt><dd>Switches the screen and the voice between English and Japanese. You can tap it while driving</dd>
+    <dt>20 m</dt><dd>How close you must be for the app to count you as arrived. Leave it at 20 m</dd>
+    <dt>🔊 High</dt><dd>Volume (high, mid, low, off). It changes each time you tap</dd>
+    <dt>🗣 Stops</dt><dd>Turns the “Next stop is …” announcement on and off. Early-departure warnings still sound</dd>
+    <dt>📍 Fix</dt><dd>Corrects the position of a bus stop (see <a href="#fix">section 10</a>)</dd>
+  </dl>
+</div>
 
-<h2 class="sec" id="fare">8. 料金と後続バスを調べる</h2>
-<h3>💰 料金一覧 ― お客様の運賃を調べる</h3>
-<p>ボタンを押すと「<strong>いま停まっているバス停までの運賃</strong>」が出ます。お客様が「久里町から乗った」と言われたら、<strong>一覧の「久里町」の金額</strong>がその方の運賃です。</p>
+<h2 lang="ja" class="sec" id="fare">8. 料金と後続バスを調べる</h2>
+<h2 class="sec" id="fare" lang="en">8. Checking fares and following buses</h2>
+<h3 lang="ja">💰 料金一覧 ― お客様の運賃を調べる</h3>
+<h3 lang="en">💰 Fares — checking a passenger's fare</h3>
+<p lang="ja">ボタンを押すと「<strong>いま停まっているバス停までの運賃</strong>」が出ます。お客様が「久里町から乗った」と言われたら、<strong>一覧の「久里町」の金額</strong>がその方の運賃です。</p>
+<p lang="en">Tap the button to see <strong>the fare to the stop you are at now</strong>. If a passenger says they boarded at 久里町, <strong>the amount next to 久里町</strong> in the list is their fare.</p>
 <div class="screen">
   <div class="bar"><span>朝戸入口 までの運賃</span><span>✕</span></div>
   <div class="body">
@@ -344,24 +449,36 @@
     <div class="fld mark" style="display:flex; gap:10px;"><span>2</span><span style="flex:1;">久里町</span><span class="big">170円</span></div>
   </div>
 </div>
-<p class="cap">▲ 電波が届かない場所でも表示できます。<strong>画面のどこを押しても閉じます。</strong></p>
+<p lang="ja" class="cap">▲ 電波が届かない場所でも表示できます。<strong>画面のどこを押しても閉じます。</strong></p>
+<p class="cap" lang="en">▲ This works even where there is no signal. <strong>Tap anywhere to close it.</strong></p>
 
-<h3>🚌 後続バス ― 次のバスを聞かれたら</h3>
-<p>いま停まっているバス停を、<strong>この後に通るバス</strong>を8本まで表示します（ダイヤ番号・行き先・時刻）。無いときは「後続バス無し」と出ます。</p>
+<h3 lang="ja">🚌 後続バス ― 次のバスを聞かれたら</h3>
+<h3 lang="en">🚌 Next buses — when someone asks about the next bus</h3>
+<p lang="ja">いま停まっているバス停を、<strong>この後に通るバス</strong>を8本まで表示します（ダイヤ番号・行き先・時刻）。無いときは「後続バス無し」と出ます。</p>
+<p lang="en">Shows up to eight <strong>buses that will call at this stop later</strong> (schedule number, destination and time). If there are none, it says “No following buses”.</p>
 
-<h2 class="sec" id="finish">9. 終点に着いたら</h2>
-<p>終点に着くと、画面いっぱいに<strong>チェッカーフラッグ</strong>が出て「終点に到着」とお知らせします。数秒で自動的に消えます（画面を押しても消えます）。</p>
-<p>そのあと、続けて次の案内が出ます。</p>
-<div class="note tip"><b>次のコースがあるとき</b>「次のコース　◯◯ 始発　13:30」と表示と声でお知らせします。</div>
-<div class="note tip"><b>その日の最後だったとき</b>「本日のダイヤは終了しました。お気をつけて車庫へお戻りください。」と表示します。</div>
+<h2 lang="ja" class="sec" id="finish">9. 終点に着いたら</h2>
+<h2 class="sec" id="finish" lang="en">9. When you reach the last stop</h2>
+<p lang="ja">終点に着くと、画面いっぱいに<strong>チェッカーフラッグ</strong>が出て「終点に到着」とお知らせします。数秒で自動的に消えます（画面を押しても消えます）。</p>
+<p lang="en">At the last stop a <strong>chequered flag</strong> fills the screen and the app tells you that you have arrived. It disappears after a few seconds, or when you tap the screen.</p>
+<p lang="ja">そのあと、続けて次の案内が出ます。</p>
+<p lang="en">After that, one of the following is shown.</p>
+<div lang="ja" class="note tip"><b>次のコースがあるとき</b>「次のコース　◯◯ 始発　13:30」と表示と声でお知らせします。</div>
+<div class="note tip" lang="en"><b>If another course follows</b>The screen and the voice tell you “Your next course leaves ◯◯ at 13:30.”</div>
+<div lang="ja" class="note tip"><b>その日の最後だったとき</b>「本日のダイヤは終了しました。お気をつけて車庫へお戻りください。」と表示します。</div>
+<div class="note tip" lang="en"><b>If it was the last course of the day</b>The screen shows “That's the end of today's schedule. Drive safely back to the depot.”</div>
 
-<h2 class="sec" id="fix">10. バス停の位置を直す</h2>
-<p>登録されているバス停の位置が実際とずれていることがあります。そのときは<strong>スマホがバス停の正面にある状態</strong>で、赤い<strong>「📍補正」</strong>を押してください。いまスマホがある場所が、新しい位置として登録されます。</p>
-<div class="note warn"><b>スマホの位置で記録されます</b>バスの大きさによって運転席の位置は変わります。位置を直すのは、<strong>スマホがバス停の標識の真横（正面）に来たとき</strong>に押してください。</div>
+<h2 lang="ja" class="sec" id="fix">10. バス停の位置を直す</h2>
+<h2 class="sec" id="fix" lang="en">10. Correcting a bus stop position</h2>
+<p lang="ja">登録されているバス停の位置が実際とずれていることがあります。そのときは<strong>スマホがバス停の正面にある状態</strong>で、赤い<strong>「📍補正」</strong>を押してください。いまスマホがある場所が、新しい位置として登録されます。</p>
+<p lang="en">Sometimes a stop's recorded position does not match where it really is. When that happens, wait until <strong>your phone is level with the bus stop</strong> and tap the red <strong>“📍 Fix”</strong> button. Where your phone is now becomes the new position.</p>
+<div lang="ja" class="note warn"><b>スマホの位置で記録されます</b>バスの大きさによって運転席の位置は変わります。位置を直すのは、<strong>スマホがバス停の標識の真横（正面）に来たとき</strong>に押してください。</div>
+<div class="note warn" lang="en"><b>It records where your phone is</b>The driver's seat sits in a different place depending on the size of the bus. Tap the button <strong>when your phone is right beside the stop sign</strong>.</div>
 
-<div class="note warn"><b>補正ボタンが点滅したら</b>バスが3秒以上停まっていて、登録位置と10m以上ずれていると、<strong>補正ボタンが赤く点滅</strong>してお知らせします。気づいたときに押してください（急がなくて結構です）。</div>
+<div lang="ja" class="note warn"><b>補正ボタンが点滅したら</b>バスが3秒以上停まっていて、登録位置と10m以上ずれていると、<strong>補正ボタンが赤く点滅</strong>してお知らせします。気づいたときに押してください（急がなくて結構です）。</div>
+<div class="note warn" lang="en"><b>If the Fix button blinks</b>When the bus has been stopped for three seconds or more and is more than 10 m from the recorded position, <strong>the Fix button blinks red</strong>. Tap it when you notice — there is no hurry.</div>
 
-<div class="btns">
+<div class="btns" lang="ja">
   <dl>
     <dt>押すタイミング</dt><dd>そのバス停に<strong>停車しているとき</strong></dd>
     <dt>GPSが悪いとき</dt><dd>「精度が低いため補正できません」と出ます。少し待ってもう一度押してください</dd>
@@ -369,9 +486,18 @@
     <dt>保存</dt><dd>運行を停止したとき、または終点に着いたあとに自動で保存されます</dd>
   </dl>
 </div>
+<div class="btns" lang="en">
+  <dl>
+    <dt>When to tap it</dt><dd>While you are <strong>stopped at that bus stop</strong></dd>
+    <dt>If GPS is poor</dt><dd>You see “GPS accuracy is too low”. Wait a moment and tap again</dd>
+    <dt>If you make a mistake</dt><dd><strong>Tap it again</strong> to undo it — the original position comes back</dd>
+    <dt>Saving</dt><dd>Saved automatically when you stop the run, or after you reach the last stop</dd>
+  </dl>
+</div>
 
-<h2 class="sec" id="trouble">11. 困ったときは</h2>
-<dl class="qa">
+<h2 lang="ja" class="sec" id="trouble">11. 困ったときは</h2>
+<h2 class="sec" id="trouble" lang="en">11. If something goes wrong</h2>
+<dl class="qa" lang="ja">
   <dt>声が出ない</dt>
   <dd>下の「🔊」ボタンを押して「🔊大」にしてください。それでも出ないときは、本体の音量を上げてください。iPhoneは<strong>横のスイッチ（消音）</strong>、Androidは<strong>マナーモード</strong>も確認してください。</dd>
 
@@ -395,13 +521,65 @@
   <dt>使い終わったら</dt>
   <dd>最初の画面の下にある「✖ アプリを閉じる」を押してください。</dd>
 </dl>
+<dl class="qa" lang="en">
+  <dt>There is no voice</dt>
+  <dd>Tap the “🔊” button at the bottom until it reads “🔊 High”. If there is still no sound, turn up the volume on the phone itself. On iPhone also check <strong>the silent switch on the side</strong>; on Android check <strong>silent mode</strong>.</dd>
+
+  <dt>The bus stop shown is wrong</dt>
+  <dd>Use “◀ Prev” and “Next ▶” to move to the correct stop. If a stop is wrong every time, correct it with “📍 Fix”.</dd>
+
+  <dt>It says “Location error”</dt>
+  <dd>Allow location access in the phone's settings.<br>
+    <strong>iPhone / iPad</strong>: Settings → Privacy &amp; Security → Location Services → Safari (or DoraSapo) → “While Using the App”<br>
+    <strong>Android</strong>: Settings → Location → on, then set Chrome (or DoraSapo) to “Allow only while using the app”</dd>
+
+  <dt>A URL bar and buttons get in the way at the bottom</dt>
+  <dd>That happens when you open it as a browser tab. Open it from <strong>the home screen icon</strong> instead and it fills the screen (see section 1).</dd>
+
+  <dt>Fares are not shown</dt>
+  <dd>Choose the course again somewhere with signal. Fares are loaded all at once when you pick a course.</dd>
+
+  <dt>I started the wrong course</dt>
+  <dd>Tap “Courses” at the bottom and choose again.</dd>
+
+  <dt>When you have finished for the day</dt>
+  <dd>Tap “✖ Close the app” at the bottom of the first screen.</dd>
+</dl>
 
 <footer>
-  <p>ドラサポ かんたん操作ガイド　©2026 Hillsfactory</p>
-  <p>わからないことがあれば、遠慮なく担当者までお声がけください。</p>
+  <p lang="ja">ドラサポ かんたん操作ガイド　©2026 Hillsfactory</p>
+  <p lang="en">DoraSapo Quick Guide　©2026 Hillsfactory</p>
+  <p lang="ja">わからないことがあれば、遠慮なく担当者までお声がけください。</p>
+  <p lang="en">If anything is unclear, please ask your supervisor.</p>
 </footer>
 
 <script>
+  /* 日本語 / English の切り替え。
+     ・アプリから manual.html?lang=en で開かれたら英語で表示する
+     ・選んだ言語は端末に記憶し、次回も同じ言語で開く
+     ・「ドラサポにもどる」のリンクにも言語を引き継ぐ */
+  (function(){
+    var btn=document.getElementById('langBtn');
+    function get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+    function set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+    var q=(location.search.match(/[?&]lang=(en|ja)/)||[])[1];
+    var lang = q || (get('mon_lang')==='en' ? 'en' : 'ja');
+    function apply(){
+      document.documentElement.setAttribute('data-lang', lang);
+      document.documentElement.lang = lang;
+      btn.textContent = (lang==='en') ? '日本語' : 'EN';
+      document.title = (lang==='en') ? 'DoraSapo Quick Guide' : 'ドラサポ かんたん操作ガイド';
+      document.querySelectorAll('.back-btn, .back-fab').forEach(function(a){
+        a.textContent = (lang==='en') ? '← Back to DoraSapo' : '← ドラサポにもどる';
+      });
+    }
+    btn.addEventListener('click', function(){
+      lang = (lang==='en') ? 'ja' : 'en';
+      set('mon_lang', lang); apply();
+    });
+    apply();
+  })();
+
   // 「ドラサポにもどる」の動き:
   //   別タブ/別ウィンドウで開かれた場合はそのタブを閉じる。
   //   同じ画面で開かれた場合(ホーム画面のアプリなど)は前の画面に戻す。
