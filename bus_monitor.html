@@ -742,6 +742,10 @@
     const b=$('langBtn'); if(b) b.textContent = (lang==='en') ? '日本語' : 'EN';
     const ml=$('manualLink'); if(ml) ml.href = './manual.html' + (lang==='en' ? '?lang=en' : '');   // ガイドも同じ言語で開く
     updateVolBtn(); updateNameBtn();
+    // textContent で書き換えた要素は起動時に覚えたノードが外れているため、ここで付け直す
+    const sb=$('startBtn');
+    if(sb) sb.textContent = T((typeof isRunning==='function' && isRunning()) ? '停止' : '開始');
+    if(typeof updateHoldBtn==='function') updateHoldBtn();
     // いま出ている画面を描き直す(走行中でなければ待機表示も作り直す)
     if(courses.length && $('scList').classList.contains('active'))
       renderCourses({dia_no:currentDiaNo, count:courses.length});
@@ -751,7 +755,7 @@
     }
   }
   function toggleLang(){
-    if(depTimer){ toast(T('発車カウントダウン中です。終わってから切り替えます')); return; }
+    // いつでも切り替えられる。読み上げ中の文だけ止めて、次の案内から新しい言語にする
     try{ window.speechSynthesis.cancel(); }catch(e){}
     lang = (lang==='en') ? 'ja' : 'en';
     lsSet('mon_lang', lang);
@@ -1433,6 +1437,7 @@
   }
   function demoStop(){
     if(demoTimer){ clearInterval(demoTimer); demoTimer=null; }
+    demoHold=false; updateHoldBtn();      // 停止したら「停車」表示に戻す
     stopDepCountdown();
     $('startBtn').textContent=T('開始');
   }
