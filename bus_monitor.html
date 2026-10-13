@@ -502,8 +502,9 @@
   }
   function primeAudio(){ if(audioPrimed) return; try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; window.speechSynthesis.speak(u); audioPrimed=true; }catch(e){} }
   // 文を言語ごとに分けて続けて読む。停留所名は日本語の声のままにするため
-  function speakParts(parts){
-    const vol=VOL[volLevel]; if(vol<=0) return;
+  const EARLY_VOL = 0.5;   // 早発の案内は、バス停案内の半分の音量にする
+  function speakParts(parts, volScale){
+    const vol=VOL[volLevel] * (volScale==null ? 1 : volScale); if(vol<=0) return;
     try{
       window.speechSynthesis.cancel();
       if(!jaVoices.length || !enVoices.length) loadVoices();
@@ -517,7 +518,7 @@
     }catch(e){}
   }
   // 英語表示でも、端末に英語の声が無ければ日本語の声で読む
-  function speak(text){ speakParts([{t:text, l:(lang==='en' && hasEnVoice()) ? 'en' : 'ja'}]); }
+  function speak(text, volScale){ speakParts([{t:text, l:(lang==='en' && hasEnVoice()) ? 'en' : 'ja'}], volScale); }
   // 「Next stop is 〇〇.」… 停留所名だけ日本語の声。名前のあとに短い間を置く
   function speakNext(prefix, name){
     if(lang==='en' && hasEnVoice()) speakParts([{t:prefix,l:'en'},{t:name+'。',l:'ja'}]);
@@ -1073,7 +1074,7 @@
       $('caption').textContent='';   // 冗長なメッセージは非表示(タグと大きな残り秒で十分)
       preOkIdx=targetIndex;                                                          // 定刻案内の対象に
       if(earlyIdx!==targetIndex){ earlyIdx=targetIndex; earlyN=0; }                  // ⑤ 停留所ごとにカウント
-      { const t=Date.now(); if(earlyN<1 && t-lastEarlyAnnounce>4000){ speak(T('早発です')); lastEarlyAnnounce=t; earlyN++; } }  // ⑦ 1回のみ
+      { const t=Date.now(); if(earlyN<1 && t-lastEarlyAnnounce>4000){ speak(T('早発です'), EARLY_VOL); lastEarlyAnnounce=t; earlyN++; } }  // ⑦ 1回のみ
     } else if(st.state==='ok'){
       const stg=lateStage(st.remainingSec);   // 3分以上の遅れのみ段階表示
       if(stg){ document.body.classList.add('state-'+stg.cls); tag.classList.add(stg.cls); diff.classList.add(stg.cls); tag.textContent=T(stg.label); diff.textContent=fmtSec(st.remainingSec); $('caption').textContent=''; }
@@ -1089,7 +1090,7 @@
       // ② 終着バス停は到着地でそこに停まるため早発注意は出さない
       if(targetIndex < stops.length-1 &&
          st.d!=null && isFinite(st.d) && st.d<=100 && st.remainingSec>=30 && preEarlyWarnedIdx!==targetIndex){
-        preEarlyWarnedIdx=targetIndex; speak(T('早発に注意してください')); flashOnce();
+        preEarlyWarnedIdx=targetIndex; speak(T('早発に注意してください'), EARLY_VOL); flashOnce();
       }
       if(st.remainingSec<0){
         const stg=lateStage(st.remainingSec);   // 3分以上の遅れのみ段階表示
