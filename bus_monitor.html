@@ -502,9 +502,10 @@
   }
   function primeAudio(){ if(audioPrimed) return; try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; window.speechSynthesis.speak(u); audioPrimed=true; }catch(e){} }
   // 文を言語ごとに分けて続けて読む。停留所名は日本語の声のままにするため
-  const EARLY_VOL = 0.5;   // 早発の案内は、バス停案内の半分の音量にする
+  const EARLY_VOL = 0.5;   // 早発の案内は、他の案内の半分の音量にする
+  const STOP_VOL  = 1.5;   // バス停名の案内は他より大きめ(音量の上限1.0を超えないよう頭打ち)
   function speakParts(parts, volScale){
-    const vol=VOL[volLevel] * (volScale==null ? 1 : volScale); if(vol<=0) return;
+    const vol=Math.min(1, VOL[volLevel] * (volScale==null ? 1 : volScale)); if(vol<=0) return;
     try{
       window.speechSynthesis.cancel();
       if(!jaVoices.length || !enVoices.length) loadVoices();
@@ -521,8 +522,8 @@
   function speak(text, volScale){ speakParts([{t:text, l:(lang==='en' && hasEnVoice()) ? 'en' : 'ja'}], volScale); }
   // 「Next stop is 〇〇.」… 停留所名だけ日本語の声。名前のあとに短い間を置く
   function speakNext(prefix, name){
-    if(lang==='en' && hasEnVoice()) speakParts([{t:prefix,l:'en'},{t:name+'。',l:'ja'}]);
-    else speakParts([{t:prefix+(lang==='en'?' ':'')+name+T('です'), l:'ja'}]);
+    if(lang==='en' && hasEnVoice()) speakParts([{t:prefix,l:'en'},{t:name+'。',l:'ja'}], STOP_VOL);
+    else speakParts([{t:prefix+(lang==='en'?' ':'')+name+T('です'), l:'ja'}], STOP_VOL);
   }
   // 文を言語ごとの断片に分ける。jaKeys に挙げた差し込み(地名など)は日本語の声で読む
   function partsOf(key, vars, jaKeys){
@@ -540,7 +541,21 @@
     else speakParts([{t:'ドラサポを開始します。キバリンショロー、ご安全に！',l:'ja'}]);
   }
   function speakStop(text){ if(nameSpeech) speak(text); }   // バス停名読み上げ(ON時のみ)
-  const yomi = s => (s && (s.kana || s.name)) || '';   // ⑦ 発音はkana優先
+  const yomi = s => (s && (s.kana || s.name)) || '';
+  // 読み上げだけの読み仮名。画面の表示は漢字のまま変えない。
+  // (例: 「山羊島」が「ヤギトウ」と読まれてしまうため)
+  const YOMI = {
+    '山羊島':'やぎじま', '山羊島ホテル前':'やぎじまほてるまえ',
+    '奥又':'おくまた', '崎原':'さきばる', '奄美':'あまみ'
+  };
+  function placeYomi(name){
+    let t = String(name||'');
+    if(!t) return t;
+    if(YOMI[t]) return YOMI[t];
+    // 「山羊島ホテル前」のように、登録した語を含む場合はその部分だけ置き換える
+    Object.keys(YOMI).sort((a,b)=>b.length-a.length).forEach(k=>{ t = t.split(k).join(YOMI[k]); });
+    return t;
+  }   // ⑦ 発音はkana優先
   try{ window.speechSynthesis.onvoiceschanged=loadVoices; loadVoices(); }catch(e){}
 
   const $ = id => document.getElementById(id);
@@ -660,6 +675,8 @@
     '取得失敗: ':'Load failed: ',
     '通信エラー: ':'Network error: ',
     '停留所名の読み上げオン':'Stop announcements on',
+    '画面が消えないようにできませんでした。低電力モードを確認してください':
+      'Could not keep the screen on. Please check whether Low Power Mode is on.',
     // --- 差し込みのある文 ---
     '現在地から 約 {d} m':'About {d} m away',
     '次々は {name}（{time}）':'Then: {name} ({time})',
@@ -961,7 +978,7 @@
       showConfirm();   // ① コース選択後に行き先確認ポップアップ(デモも同じ)
     }catch(e){ alert(T('通信エラー: ')+e.message); }
   }
-  $('monBack').onclick=()=>{ flushCorrections(); demoStop(); stopGps(); hideFinishFx(); show('scList'); };   // 未保存の補正を取りこぼさない
+  $('monBack').onclick=()=>{ flushCorrections(); demoStop(); stopGps(); syncWake(false); hideFinishFx(); show('scList'); };   // 未保存の補正を取りこぼさない
 
   // ---- 定刻(絶対時刻)算出 ----
   function schedDate(stop){ const p=(stop.scheduled_time||'00:00:00').split(':').map(Number); const d=new Date(); d.setHours(p[0]||0,p[1]||0,p[2]||0,0); return d; }
@@ -1185,7 +1202,7 @@
       speakParts([].concat(
         rest ? partsOf('{min}ふん、きゅうけいがはいります。',{min:rest},[]) : [],
         partsOf('次のコースは、{place}始発、{time}です',
-                {place:nx.start_place||'', time:(lang==='en' ? (t||'') : (t||'').replace(':','時')+'分')},
+                {place:placeYomi(nx.start_place||''), time:(lang==='en' ? (t||'') : (t||'').replace(':','時')+'分')},
                 ['place'])));
     } else {
       el.className='show end'; el.onclick=null;   // 本日終了時は押しても何もしない
@@ -1288,11 +1305,68 @@
   }
   function stopGps(){ if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null; } pendingAutoStart=false; stopDepCountdown(); $('correctBtn').classList.remove('blink'); $('startBtn').textContent=T('開始'); }
   // ⑥ 開始→確認ポップアップ→確認で開始 / ⑫ 停止で補正保存
+
+  /* ---- 運行中は画面を自動ロックさせない -----------------------------
+     まず Wake Lock API を使い、断られたら無音動画のループ再生で代用する
+     (ツーリング記録アプリ cyc-app と同じ方式)。
+     運行中(実GPS・デモとも)だけ有効にし、停止したら端末の自動ロックに戻す。
+     -------------------------------------------------------------- */
+  const NOSLEEP_MP4 = "data:video/mp4;base64,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";
+  let wakeLock=null, wakeVideo=null, wakeRequesting=false, lowPowerWarned=false;
+  const wakeHeld = () => (wakeLock && !wakeLock.released) || (wakeVideo && !wakeVideo.paused);
+  const shouldWake = () => (typeof isRunning==='function') && isRunning();
+
+  function startWakeVideo(){
+    if(!wakeVideo){
+      wakeVideo=document.createElement('video');
+      wakeVideo.setAttribute('playsinline','');
+      wakeVideo.setAttribute('title','No Sleep');
+      wakeVideo.muted=true;
+      wakeVideo.src=NOSLEEP_MP4;
+      // 動画の終端で止まらないよう、0.5秒を過ぎたら頭付近へ戻す
+      wakeVideo.addEventListener('timeupdate',()=>{ if(wakeVideo.currentTime>0.5) wakeVideo.currentTime=Math.random(); });
+    }
+    return wakeVideo.play();
+  }
+  async function requestWake(fromGesture){
+    if(wakeRequesting || wakeHeld()) return;
+    wakeRequesting=true;
+    if('wakeLock' in navigator){
+      try{
+        wakeLock=await navigator.wakeLock.request('screen');
+        if(!shouldWake()){ wakeLock.release().catch(()=>{}); wakeLock=null; wakeRequesting=false; return; }
+        wakeLock.addEventListener('release',()=>{ wakeLock=null; });
+        if(wakeVideo) wakeVideo.pause();
+      }catch(e){
+        wakeLock=null;
+        if(e && e.name==='NotAllowedError' && !lowPowerWarned){
+          lowPowerWarned=true;
+          toast(T('画面が消えないようにできませんでした。低電力モードを確認してください'));
+        }
+      }
+    }
+    if(!wakeLock && fromGesture){ try{ await startWakeVideo(); }catch(e){} }
+    wakeRequesting=false;
+  }
+  function releaseWake(){
+    if(wakeLock){ wakeLock.release().catch(()=>{}); wakeLock=null; }
+    if(wakeVideo) wakeVideo.pause();
+  }
+  // 運行の状態に合わせて付け外しする(状態が変わりうる場所で毎回呼ぶ)
+  function syncWake(fromGesture){
+    if(shouldWake()){ if(!wakeHeld()) requestWake(fromGesture); }
+    else releaseWake();
+  }
+  // 画面を触ったときに切れていれば取り直す(iOSは操作直後でないと許可しないことがある)
+  document.addEventListener('touchend', ()=>{ if(shouldWake() && !wakeHeld()) requestWake(true); }, {passive:true});
+  document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') syncWake(false); });
+
   function beginRun(){
     pendingAutoStart=true; stillPos=null; preEarlyWarnedIdx=-1; runStartAt=Date.now();
     $('correctBtn').classList.remove('blink');
     speakOpening();
     if(mode==='demo'){ pendingAutoStart=false; demoStart(); } else { startGps(); }
+    syncWake(true);          // 開始ボタンの操作直後なので、ここで取りに行く
   }
   function showConfirm(){
     if(!course){ beginRun(); return; }
@@ -1333,7 +1407,7 @@
     }catch(e){ toast(T('取消の通信に失敗しました')); }
     return false;
   }
-  function stopRun(){ flushCorrections(); if(mode==='demo') demoStop(); else stopGps(); }
+  function stopRun(){ flushCorrections(); if(mode==='demo') demoStop(); else stopGps(); syncWake(false); }
   function isRunning(){ return mode==='demo' ? demoRunning() : watchId!==null; }
   $('startBtn').addEventListener('click', ()=>{
     primeAudio();
