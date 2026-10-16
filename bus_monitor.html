@@ -79,7 +79,8 @@
   .demo-clock{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:30px; font-weight:800; letter-spacing:1px; }
   .demo-diff{ margin-left:auto; font-size:15px; font-weight:700; color:var(--ink-dim); }
   .demo-diff.early{ color:var(--early); } .demo-diff.late{ color:var(--late-y); }
-  .spd{ min-width:46px; padding:9px 0; border-radius:9px; border:1px solid var(--line);
+  #demoAccel{ flex:0 0 auto; min-width:78px; max-width:104px; padding:11px 2px; }
+  .spd{ min-width:40px; flex:0 0 auto; padding:9px 8px; border-radius:9px; border:1px solid var(--line);
         background:var(--panel-2); color:var(--ink); font-size:15px; font-weight:800; }
   .spd.on{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
   .dia-list-btn{ width:100%; padding:13px; border-radius:11px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:15px; font-weight:700; }
@@ -151,19 +152,19 @@
   .rt-count{ font-family:var(--mono); font-weight:800; font-size:17px; color:var(--ink); letter-spacing:.5px; }
   .rt-sep{ opacity:.45; margin:0 2px; }
   .rt-next{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .live-btn{ flex:1; padding:11px; border-radius:9px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:15px; font-weight:700; }
+  .live-btn{ flex:0 1 auto; min-width:0; white-space:nowrap; padding:11px 10px; border-radius:9px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:15px; font-weight:700; }
   .live-btn.on{ background:#b91c1c; color:#fff; border-color:#b91c1c; }
   .gps-note{ font-size:11px; color:var(--ink-faint); text-align:center; padding:0 16px 6px; }
 
-  .controls{ display:flex; gap:6px; align-items:stretch; padding:10px 12px; }
+  .controls{ display:flex; flex-wrap:wrap; gap:6px; align-items:stretch; padding:10px 12px; }
   .controls.primary{ border-top:1px solid var(--line); }
-  .controls button{ flex:1; padding:14px 6px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:14px; font-weight:700; white-space:nowrap; }
+  .controls button{ flex:1 1 auto; min-width:0; padding:14px 6px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:14px; font-weight:700; white-space:nowrap; }
   .controls .adv{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
   .controls.secondary button{ font-size:13px; font-weight:600; padding:12px 6px; }
   .controls button.off{ opacity:.45; }
-  .radius-sel{ flex:1; background:var(--panel); border:1px solid var(--line); color:var(--ink); border-radius:10px; padding:12px 6px; font-size:14px; font-family:var(--sans); text-align:center; }
-  .sim{ display:flex; flex-direction:column; gap:8px; width:100%; padding:6px 16px 4px; }
-  .sim-line{ display:flex; align-items:center; gap:10px; }
+  .radius-sel{ flex:1 1 auto; min-width:0; background:var(--panel); border:1px solid var(--line); color:var(--ink); border-radius:10px; padding:12px 6px; font-size:14px; font-family:var(--sans); text-align:center; }
+  .sim{ display:flex; flex-direction:column; gap:8px; width:100%; padding:6px 12px 4px; box-sizing:border-box; }
+  .sim-line{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
   .sim-line .sl{ font-size:12px; color:var(--ink-dim); white-space:nowrap; }
   .sim-line input[type=range]{ flex:1; min-width:0; accent-color:var(--neutral); height:30px; }
   .sim-off-btn{ width:100%; padding:11px; border-radius:9px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font-size:13px; font-weight:600; }
@@ -364,7 +365,6 @@
           <span class="demo-diff" id="demoDiff">定刻 --:--</span>
         </div>
         <div class="sim-line">
-          <span class="sl">速度</span>
           <button class="spd" data-kmh="30">30</button>
           <button class="spd on" data-kmh="40">40</button>
           <button class="spd" data-kmh="50">50</button>
@@ -615,7 +615,7 @@
     '速度':'Speed',
     '⏸ 停車':'⏸ Hold',
     '▶ 発車':'▶ Depart',
-    '実時間':'Real time',
+    '実時間':'×1',
     'ダイヤ — ・ —':'Schedule — · —',
     'この便は「—」行きです':'This bus is bound for “—”',
     '⚠ 方向幕変更を確認':'⚠ Destination sign checked',
