@@ -503,7 +503,6 @@
   function primeAudio(){ if(audioPrimed) return; try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; window.speechSynthesis.speak(u); audioPrimed=true; }catch(e){} }
   // 文を言語ごとに分けて続けて読む。停留所名は日本語の声のままにするため
   const EARLY_VOL = 0.5;   // 早発の案内は、他の案内の半分の音量にする
-  const STOP_VOL  = 1.5;   // バス停名の案内は他より大きめ(音量の上限1.0を超えないよう頭打ち)
   function speakParts(parts, volScale){
     const vol=Math.min(1, VOL[volLevel] * (volScale==null ? 1 : volScale)); if(vol<=0) return;
     try{
@@ -522,8 +521,8 @@
   function speak(text, volScale){ speakParts([{t:text, l:(lang==='en' && hasEnVoice()) ? 'en' : 'ja'}], volScale); }
   // 「Next stop is 〇〇.」… 停留所名だけ日本語の声。名前のあとに短い間を置く
   function speakNext(prefix, name){
-    if(lang==='en' && hasEnVoice()) speakParts([{t:prefix,l:'en'},{t:name+'。',l:'ja'}], STOP_VOL);
-    else speakParts([{t:prefix+(lang==='en'?' ':'')+name+T('です'), l:'ja'}], STOP_VOL);
+    if(lang==='en' && hasEnVoice()) speakParts([{t:prefix,l:'en'},{t:name+'。',l:'ja'}]);
+    else speakParts([{t:prefix+(lang==='en'?' ':'')+name+T('です'), l:'ja'}]);
   }
   // 文を言語ごとの断片に分ける。jaKeys に挙げた差し込み(地名など)は日本語の声で読む
   function partsOf(key, vars, jaKeys){
