@@ -519,10 +519,20 @@
   }
   // 英語表示でも、端末に英語の声が無ければ日本語の声で読む
   function speak(text, volScale){ speakParts([{t:text, l:(lang==='en' && hasEnVoice()) ? 'en' : 'ja'}], volScale); }
-  // 「Next stop is 〇〇.」… 停留所名だけ日本語の声。名前のあとに短い間を置く
-  function speakNext(prefix, name){
-    if(lang==='en' && hasEnVoice()) speakParts([{t:prefix,l:'en'},{t:name+'。',l:'ja'}]);
-    else speakParts([{t:prefix+(lang==='en'?' ':'')+name+T('です'), l:'ja'}]);
+  // 停留所の案内。英語表示のときは英語→日本語の二言語で読む
+  //   「Next stop is 〇〇.」(英語の声) → 「次は〇〇です」(日本語の声)
+  // 日本人のお客様にも分かるようにするため。停留所名は常に日本語の声で読む。
+  function speakNext(isLast, name){
+    const ja = (isLast ? '次は終点、' : '次は、');
+    if(lang==='en' && hasEnVoice()){
+      speakParts([
+        {t:T(ja),        l:'en'},   // Next stop is / Last stop,
+        {t:name+'。',     l:'ja'},   // 停留所名 + 短い間
+        {t:ja+name+'です', l:'ja'}    // 次は〇〇です
+      ]);
+    } else {
+      speakParts([{t:ja+name+'です', l:'ja'}]);
+    }
   }
   // 文を言語ごとの断片に分ける。jaKeys に挙げた差し込み(地名など)は日本語の声で読む
   function partsOf(key, vars, jaKeys){
@@ -1004,7 +1014,7 @@
         if(isLast) return { state:'terminal', stop, remainingSec, d };  // 終点からは進めない
         const nextStop = stops[targetIndex+1];   // 発車=半径を外れた → 次を案内
         advance();
-        if(nextStop){ if(nameSpeech) speakNext(T(targetIndex===stops.length-1 ? '次は終点、' : '次は、'), yomi(nextStop)); }  // ④/⑦
+        if(nextStop){ if(nameSpeech) speakNext(targetIndex===stops.length-1, yomi(nextStop)); }  // ④/⑦
         if(targetIndex>=stops.length) return {state:'finished'};
         return evaluate(lat,lng,now);
       }
